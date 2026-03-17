@@ -1,42 +1,34 @@
-import { advanceScene, createStoryState, regenerateState } from '/shared/story-engine.js';
-
-const stateElements = {
-  applyOutputSize: document.querySelector('#apply-output-size'),
-  applySettings: document.querySelector('#apply-settings'),
-  beatDurationInput: document.querySelector('#beat-duration-input'),
-  beatDurationValue: document.querySelector('#beat-duration-value'),
+const elements = {
   controlUrl: document.querySelector('#control-url'),
-  currentAct: document.querySelector('#current-act'),
-  currentCaption: document.querySelector('#current-caption'),
-  currentCue: document.querySelector('#current-cue'),
-  currentScene: document.querySelector('#current-scene'),
-  intensityInput: document.querySelector('#intensity-input'),
-  intensityValue: document.querySelector('#intensity-value'),
   ndiFpsInput: document.querySelector('#ndi-fps-input'),
   ndiMessage: document.querySelector('#ndi-message'),
   ndiReason: document.querySelector('#ndi-reason'),
   ndiSourceInput: document.querySelector('#ndi-source-input'),
-  ndiStart: document.querySelector('#ndi-start'),
   ndiStatus: document.querySelector('#ndi-status'),
-  ndiStop: document.querySelector('#ndi-stop'),
   outputHeightInput: document.querySelector('#output-height-input'),
+  outputStatus: document.querySelector('#output-status'),
+  outputSummary: document.querySelector('#output-summary'),
   outputUrl: document.querySelector('#output-url'),
-  outputUrlSecondary: document.querySelector('#output-url-secondary'),
   outputWidthInput: document.querySelector('#output-width-input'),
-  playbackMode: document.querySelector('#playback-mode'),
-  previousScene: document.querySelector('#previous-scene'),
-  regenerateStory: document.querySelector('#regenerate-story'),
-  sceneList: document.querySelector('#scene-list'),
-  seedInput: document.querySelector('#seed-input'),
-  togglePlay: document.querySelector('#toggle-play'),
-  nextScene: document.querySelector('#next-scene')
+  startOutput: document.querySelector('#start-output'),
+  stopOutput: document.querySelector('#stop-output')
 };
 
-let state;
-let currentConfig;
-let ndiStatus;
-let outputConfig;
-let playbackTimer;
+let currentConfig = null;
+let ndiStatus = null;
+let outputState = {
+  active: false,
+  height: Number(elements.outputHeightInput.value),
+  width: Number(elements.outputWidthInput.value)
+};
+
+function syncInputValue(input, value) {
+  if (document.activeElement === input) {
+    return;
+  }
+
+  input.value = value;
+}
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
@@ -66,241 +58,87 @@ async function postJson(url, payload = {}) {
   return body;
 }
 
-async function pushState() {
-  await postJson('/api/state', state);
-}
-
-function syncStoryControls() {
-  stateElements.seedInput.value = state.seed;
-  stateElements.beatDurationInput.value = String(state.beatDuration);
-  stateElements.intensityInput.value = String(state.intensity);
-  stateElements.beatDurationValue.textContent = `${state.beatDuration} ms`;
-  stateElements.intensityValue.textContent = `${Math.round(state.intensity * 100)}%`;
-}
-
-function syncOutputControls() {
-  if (!outputConfig) {
+function renderConfig() {
+  if (!currentConfig) {
     return;
   }
 
-  stateElements.outputWidthInput.value = String(outputConfig.width);
-  stateElements.outputHeightInput.value = String(outputConfig.height);
+  elements.controlUrl.textContent = currentConfig.controlUrl;
+  elements.controlUrl.href = currentConfig.controlUrl;
+  elements.outputUrl.textContent = currentConfig.outputUrl;
+  elements.outputUrl.href = currentConfig.outputUrl;
 }
 
-function syncNdiControls() {
+function renderOutputState() {
+  elements.outputStatus.textContent = outputState.active ? 'Running' : 'Stopped';
+  elements.outputSummary.textContent = `${outputState.width} x ${outputState.height}`;
+  elements.startOutput.disabled = outputState.active;
+  elements.stopOutput.disabled = !outputState.active;
+}
+
+function renderNdiStatus() {
   if (!ndiStatus) {
     return;
   }
 
-  stateElements.ndiStatus.textContent = ndiStatus.available ? (ndiStatus.running ? 'Streaming' : 'Ready') : 'Unavailable';
-  stateElements.ndiReason.textContent = ndiStatus.reason ?? 'idle';
-  stateElements.ndiMessage.textContent =
+  elements.ndiStatus.textContent = ndiStatus.available ? (ndiStatus.running ? 'Streaming' : 'Ready') : 'Unavailable';
+  elements.ndiReason.textContent = ndiStatus.reason ?? 'idle';
+  elements.ndiMessage.textContent =
     ndiStatus.lastError ?? (ndiStatus.available ? 'NDI sender is idle.' : 'NDI requires the Electron control app.');
 
   if (typeof ndiStatus.sourceName === 'string') {
-    stateElements.ndiSourceInput.value = ndiStatus.sourceName;
+    syncInputValue(elements.ndiSourceInput, ndiStatus.sourceName);
   }
 
   if (typeof ndiStatus.fps === 'number') {
-    stateElements.ndiFpsInput.value = String(ndiStatus.fps);
+    syncInputValue(elements.ndiFpsInput, String(ndiStatus.fps));
   }
-
-  stateElements.ndiStart.disabled = !ndiStatus.available;
-  stateElements.ndiStop.disabled = !ndiStatus.available || !ndiStatus.running;
-}
-
-function renderSceneList() {
-  stateElements.sceneList.innerHTML = state.scenes
-    .map((scene, index) => {
-      const isActive = index === state.currentIndex ? ' scene-row-active' : '';
-
-      return `
-        <button class="scene-table scene-row${isActive}" data-index="${index}">
-          <span>${index + 1}</span>
-          <span>${scene.act}</span>
-          <span>${scene.title}<br>${scene.subtitle}</span>
-          <span>${scene.cue}</span>
-        </button>
-      `;
-    })
-    .join('');
 }
 
 function render() {
-  const currentScene = state.scenes[state.currentIndex];
-
-  syncStoryControls();
-  syncOutputControls();
-  syncNdiControls();
-  renderSceneList();
-
-  stateElements.currentAct.textContent = currentScene.act;
-  stateElements.currentScene.textContent = `${state.currentIndex + 1} / ${state.scenes.length} ${currentScene.title}`;
-  stateElements.currentCue.textContent = currentScene.cue;
-  stateElements.currentCaption.textContent = currentScene.caption;
-  stateElements.playbackMode.textContent = state.isPlaying ? 'Running' : 'Manual';
-  stateElements.togglePlay.textContent = state.isPlaying ? 'Pause' : 'Run';
-
-  if (currentConfig) {
-    const { controlUrl, outputUrl } = currentConfig;
-
-    stateElements.controlUrl.textContent = controlUrl;
-    stateElements.controlUrl.href = controlUrl;
-    stateElements.outputUrl.textContent = outputUrl;
-    stateElements.outputUrl.href = outputUrl;
-    stateElements.outputUrlSecondary.textContent = outputUrl;
-    stateElements.outputUrlSecondary.href = outputUrl;
-  }
+  renderConfig();
+  renderOutputState();
+  renderNdiStatus();
 }
 
-function schedulePlayback() {
-  window.clearTimeout(playbackTimer);
+async function refreshStatuses() {
+  const [nextOutputState, nextNdiStatus] = await Promise.all([
+    fetchJson('/api/output/status'),
+    fetchJson('/api/ndi/status')
+  ]);
 
-  if (!state.isPlaying) {
-    return;
-  }
-
-  playbackTimer = window.setTimeout(async () => {
-    state = advanceScene(state, 1);
-    render();
-    await pushState();
-    schedulePlayback();
-  }, state.beatDuration);
-}
-
-async function updateState(nextState) {
-  state = {
-    ...nextState,
-    updatedAt: new Date().toISOString()
-  };
-
-  render();
-  schedulePlayback();
-  await pushState();
-}
-
-function handleSceneSelection(event) {
-  const target = event.target.closest('[data-index]');
-
-  if (!target) {
-    return;
-  }
-
-  updateState({
-    ...state,
-    currentIndex: Number(target.dataset.index)
-  });
-}
-
-async function refreshNdiStatus() {
-  ndiStatus = await fetchJson('/api/ndi/status');
-  render();
-}
-
-async function refreshOutputConfig() {
-  outputConfig = await fetchJson('/api/output-config');
+  outputState = nextOutputState;
+  ndiStatus = nextNdiStatus;
   render();
 }
 
 async function initialise() {
   currentConfig = await fetchJson('/api/config');
-  ndiStatus = await fetchJson('/api/ndi/status');
-  outputConfig = currentConfig.outputConfig ?? (await fetchJson('/api/output-config'));
-
-  try {
-    state = await fetchJson('/api/state');
-  } catch {
-    state = createStoryState();
-    await pushState();
-  }
-
-  render();
-  schedulePlayback();
-
-  const events = new EventSource('/events');
-  events.addEventListener('state', (event) => {
-    const incomingState = JSON.parse(event.data);
-
-    if (incomingState.updatedAt !== state.updatedAt) {
-      state = incomingState;
-      render();
-      schedulePlayback();
-    }
-  });
+  await refreshStatuses();
 }
 
-stateElements.togglePlay.addEventListener('click', () => {
-  updateState({
-    ...state,
-    isPlaying: !state.isPlaying
+elements.startOutput.addEventListener('click', async () => {
+  const response = await postJson('/api/output/start', {
+    fps: Number(elements.ndiFpsInput.value),
+    height: Number(elements.outputHeightInput.value),
+    sourceName: elements.ndiSourceInput.value.trim() || 'Achmed Output',
+    width: Number(elements.outputWidthInput.value)
   });
-});
 
-stateElements.previousScene.addEventListener('click', () => {
-  updateState(advanceScene(state, -1));
-});
-
-stateElements.nextScene.addEventListener('click', () => {
-  updateState(advanceScene(state, 1));
-});
-
-stateElements.applySettings.addEventListener('click', () => {
-  updateState({
-    ...state,
-    seed: stateElements.seedInput.value.trim() || state.seed,
-    beatDuration: Number(stateElements.beatDurationInput.value),
-    intensity: Number(stateElements.intensityInput.value)
-  });
-});
-
-stateElements.regenerateStory.addEventListener('click', () => {
-  updateState(
-    regenerateState(state, {
-      seed: stateElements.seedInput.value.trim() || `${Date.now()}`,
-      beatDuration: Number(stateElements.beatDurationInput.value),
-      intensity: Number(stateElements.intensityInput.value)
-    })
-  );
-});
-
-stateElements.beatDurationInput.addEventListener('input', () => {
-  stateElements.beatDurationValue.textContent = `${Number(stateElements.beatDurationInput.value)} ms`;
-});
-
-stateElements.intensityInput.addEventListener('input', () => {
-  stateElements.intensityValue.textContent = `${Math.round(Number(stateElements.intensityInput.value) * 100)}%`;
-});
-
-stateElements.applyOutputSize.addEventListener('click', async () => {
-  outputConfig = await postJson('/api/output-config', {
-    width: Number(stateElements.outputWidthInput.value),
-    height: Number(stateElements.outputHeightInput.value)
-  });
-  await refreshNdiStatus();
-});
-
-stateElements.sceneList.addEventListener('click', handleSceneSelection);
-
-stateElements.ndiStart.addEventListener('click', async () => {
-  ndiStatus = await postJson('/api/ndi/start', {
-    fps: Number(stateElements.ndiFpsInput.value),
-    sourceName: stateElements.ndiSourceInput.value.trim() || 'Achmed Output'
-  });
-  outputConfig = {
-    width: ndiStatus.width,
-    height: ndiStatus.height
-  };
+  outputState = response.outputState;
+  ndiStatus = response.ndiStatus;
   render();
 });
 
-stateElements.ndiStop.addEventListener('click', async () => {
-  ndiStatus = await postJson('/api/ndi/stop');
+elements.stopOutput.addEventListener('click', async () => {
+  const response = await postJson('/api/output/stop');
+  outputState = response.outputState;
+  ndiStatus = response.ndiStatus;
   render();
 });
 
 initialise();
 
 window.setInterval(() => {
-  refreshNdiStatus().catch(() => {});
-  refreshOutputConfig().catch(() => {});
+  refreshStatuses().catch(() => {});
 }, 2000);

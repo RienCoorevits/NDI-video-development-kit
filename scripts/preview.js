@@ -17,6 +17,7 @@ const preferredPort = Number(cli.port ?? process.env.PORT ?? 3030);
 const preferredHost = String(cli.host ?? process.env.HOST ?? '127.0.0.1');
 
 const serverSession = await startServer({
+  dev: true,
   host: preferredHost,
   port: preferredPort
 });
@@ -32,4 +33,3 @@ const shutdown = async () => {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-

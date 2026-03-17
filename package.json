@@ -6,6 +6,7 @@
   "main": "electron/main.js",
   "scripts": {
     "build:ndi-helper": "node scripts/build-ndi-helper.js",
+    "dev:electron": "nodemon --watch electron --watch scripts/start-electron.js --watch package.json --ext js,mjs,cjs,json --exec \"node scripts/start-electron.js\"",
     "start": "node scripts/preview.js",
     "start:electron": "node scripts/start-electron.js",
     "start:network": "node scripts/preview.js --host=0.0.0.0 --port=3030",
@@ -19,6 +20,8 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "electron": "^30.5.1"
+    "electron": "^30.5.1",
+    "nodemon": "^3.1.14",
+    "vite": "^8.0.0"
   }
 }

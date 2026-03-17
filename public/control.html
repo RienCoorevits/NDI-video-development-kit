@@ -7,144 +7,72 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body class="control-page">
-    <main class="control-layout">
-      <header class="panel">
-        <h1>Achmed Control</h1>
-        <p>Electron control surface. Output stays on <a id="output-url" href="#" target="_blank" rel="noreferrer"></a>.</p>
-      </header>
+    <main class="control-shell">
+      <div class="control-column control-column-primary">
+        <section class="control-section">
+          <h1>Achmed Control</h1>
+        </section>
 
-      <section class="panel">
-        <h2>Transport</h2>
-        <div class="button-row">
-          <button id="toggle-play">Run</button>
-          <button id="previous-scene">Prev</button>
-          <button id="next-scene">Next</button>
-          <button id="apply-settings">Apply</button>
-          <button id="regenerate-story">Rebuild</button>
-        </div>
-      </section>
+        <section class="control-section">
+          <h2>Routing</h2>
+          <p>Control URL: <a id="control-url" href="#" target="_blank" rel="noreferrer"></a></p>
+          <p>Output URL: <a id="output-url" href="#" target="_blank" rel="noreferrer"></a></p>
+        </section>
 
-      <section class="panel">
-        <h2>Status</h2>
-        <div class="value-grid">
-          <div>
-            <span class="label">Playback</span>
-            <strong id="playback-mode"></strong>
-          </div>
-          <div>
-            <span class="label">Act</span>
-            <strong id="current-act"></strong>
-          </div>
-          <div>
-            <span class="label">Scene</span>
-            <strong id="current-scene"></strong>
-          </div>
-          <div>
-            <span class="label">Cue</span>
-            <strong id="current-cue"></strong>
-          </div>
-        </div>
-        <div class="stack">
-          <span class="label">Caption</span>
-          <div id="current-caption" class="value-box"></div>
-        </div>
-      </section>
+        <section class="control-section">
+          <h2>Output Control</h2>
+          <p>
+            <button id="start-output">Start Output</button>
+            <button id="stop-output">Stop Output</button>
+          </p>
+          <p>Output Status: <strong id="output-status"></strong></p>
+        </section>
 
-      <section class="panel">
-        <h2>Story</h2>
-        <div class="form-grid">
-          <label>
-            <span class="label">Seed</span>
-            <input id="seed-input" type="text" autocomplete="off">
-          </label>
-          <label>
-            <span class="label">Beat Duration (ms)</span>
-            <input id="beat-duration-input" type="number" min="3000" max="14000" step="500">
-          </label>
-          <label>
-            <span class="label">Intensity</span>
-            <input id="intensity-input" type="number" min="0.2" max="1" step="0.05">
-          </label>
-        </div>
-        <div class="value-grid">
-          <div>
-            <span class="label">Beat</span>
-            <strong id="beat-duration-value"></strong>
+        <section class="control-section">
+          <h2>Output</h2>
+          <div class="field-row">
+            <p>
+              <label>
+                Width
+                <input id="output-width-input" type="number" min="320" max="3840" step="1" value="1280">
+              </label>
+            </p>
+            <p>
+              <label>
+                Height
+                <input id="output-height-input" type="number" min="180" max="2160" step="1" value="720">
+              </label>
+            </p>
           </div>
-          <div>
-            <span class="label">Intensity</span>
-            <strong id="intensity-value"></strong>
-          </div>
-        </div>
-      </section>
+          <p>Canvas / NDI Size: <span id="output-summary"></span></p>
+        </section>
 
-      <section class="panel">
-        <h2>Output</h2>
-        <div class="form-grid compact-grid">
-          <label>
-            <span class="label">Width</span>
-            <input id="output-width-input" type="number" min="320" max="3840" step="1" value="1280">
-          </label>
-          <label>
-            <span class="label">Height</span>
-            <input id="output-height-input" type="number" min="180" max="2160" step="1" value="720">
-          </label>
-        </div>
-        <div class="button-row">
-          <button id="apply-output-size">Apply Output Size</button>
-        </div>
-        <div class="stack">
-          <span class="label">Control URL</span>
-          <a id="control-url" href="#" target="_blank" rel="noreferrer"></a>
-        </div>
-        <div class="stack">
-          <span class="label">Output URL</span>
-          <a id="output-url-secondary" href="#" target="_blank" rel="noreferrer"></a>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>NDI</h2>
-        <div class="form-grid compact-grid">
-          <label>
-            <span class="label">Source Name</span>
-            <input id="ndi-source-input" type="text" value="Achmed Output" autocomplete="off">
-          </label>
-          <label>
-            <span class="label">FPS</span>
-            <input id="ndi-fps-input" type="number" min="1" max="60" step="1" value="30">
-          </label>
-        </div>
-        <div class="button-row">
-          <button id="ndi-start">Start NDI</button>
-          <button id="ndi-stop">Stop NDI</button>
-        </div>
-        <div class="value-grid">
-          <div>
-            <span class="label">Status</span>
-            <strong id="ndi-status"></strong>
+        <section class="control-section">
+          <h2>NDI</h2>
+          <div class="field-row">
+            <p>
+              <label>
+                Source Name
+                <input id="ndi-source-input" type="text" value="Achmed Output" autocomplete="off">
+              </label>
+            </p>
+            <p>
+              <label>
+                FPS
+                <input id="ndi-fps-input" type="number" min="1" max="60" step="1" value="30">
+              </label>
+            </p>
           </div>
-          <div>
-            <span class="label">Mode</span>
-            <strong id="ndi-reason"></strong>
-          </div>
-        </div>
-        <div class="stack">
-          <span class="label">NDI Message</span>
-          <div id="ndi-message" class="value-box"></div>
-        </div>
-      </section>
+          <p>Status: <strong id="ndi-status"></strong></p>
+          <p>Mode: <strong id="ndi-reason"></strong></p>
+          <p>NDI Message: <span id="ndi-message"></span></p>
+        </section>
+      </div>
 
-      <section class="panel panel-wide">
-        <h2>Scene Queue</h2>
-        <div class="scene-table scene-table-head" aria-hidden="true">
-          <span>#</span>
-          <span>Act</span>
-          <span>Title</span>
-          <span>Cue</span>
-        </div>
-        <div id="scene-list" class="scene-list"></div>
-      </section>
+      <div class="control-column" aria-hidden="true"></div>
+      <div class="control-column" aria-hidden="true"></div>
+      <div class="control-column" aria-hidden="true"></div>
+      <div class="control-column" aria-hidden="true"></div>
     </main>
 
     <script type="module" src="/control.js"></script>

@@ -66,6 +66,7 @@ async function closeServer() {
 async function boot() {
   try {
     serverSession = await startServer({
+      dev: true,
       host: preferredHost,
       port: preferredPort,
       ndiController
@@ -76,6 +77,7 @@ async function boot() {
     }
 
     serverSession = await startServer({
+      dev: true,
       host: preferredHost,
       port: 0,
       ndiController
