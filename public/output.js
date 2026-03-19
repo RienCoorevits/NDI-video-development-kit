@@ -1,23 +1,23 @@
 let outputSize = {
-  height: window.innerHeight || 720,
-  width: window.innerWidth || 1280
+  height: 720,
+  width: 1280
 };
 
-function applySketchSize(p5, width, height) {
-  if (!p5.canvas) {
+let sketchInstance = null;
+
+function applySketchSize(width, height) {
+  if (!sketchInstance || !sketchInstance.canvas) {
     return;
   }
 
-  if (p5.width === width && p5.height === height) {
+  if (sketchInstance.width === width && sketchInstance.height === height) {
     return;
   }
 
-  p5.resizeCanvas(width, height, true);
+  sketchInstance.resizeCanvas(width, height, true);
 }
 
 function drawSketch(p5) {
-  applySketchSize(p5, outputSize.width, outputSize.height);
-
   const time = p5.millis() * 0.001;
   const centerX = p5.width * 0.5;
   const centerY = p5.height * 0.5;
@@ -49,7 +49,7 @@ function drawSketch(p5) {
   p5.textAlign(p5.LEFT, p5.TOP);
   p5.textSize(18);
   p5.text('p5.js test sketch', 24, 20);
-  p5.text(`${outputSize.width} x ${outputSize.height}`, 24, 44);
+  p5.text(`${p5.width} x ${p5.height}`, 24, 44);
 }
 
 async function fetchJson(url) {
@@ -63,15 +63,19 @@ async function fetchJson(url) {
 }
 
 async function refreshOutputSize() {
-  const nextState = await fetchJson('/api/output/status');
+  const outputState = await fetchJson('/api/output/status');
   outputSize = {
-    height: Number(nextState.height) || outputSize.height,
-    width: Number(nextState.width) || outputSize.width
+    height: Number(outputState.height) || outputSize.height,
+    width: Number(outputState.width) || outputSize.width
   };
+
+  applySketchSize(outputSize.width, outputSize.height);
 }
 
-function createSketch() {
-  new window.p5((p5) => {
+async function initialise() {
+  await refreshOutputSize();
+
+  sketchInstance = new window.p5((p5) => {
     p5.setup = () => {
       p5.createCanvas(outputSize.width, outputSize.height);
       p5.frameRate(60);
@@ -81,16 +85,7 @@ function createSketch() {
     p5.draw = () => {
       drawSketch(p5);
     };
-
-    p5.windowResized = () => {
-      applySketchSize(p5, outputSize.width, outputSize.height);
-    };
   });
-}
-
-async function initialise() {
-  await refreshOutputSize();
-  createSketch();
 
   window.setInterval(() => {
     refreshOutputSize().catch(() => {});

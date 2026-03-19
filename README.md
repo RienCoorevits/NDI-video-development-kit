@@ -65,9 +65,11 @@ The output now includes a test p5.js sketch loaded from the custom [libraries](/
 
 Output width and height are a shared setting:
 
-- the output canvas internal size follows the current output width and height state
-- the hidden Electron offscreen renderer uses those same values
-- the NDI sender uses those same values
+- `Start Output` locks the current width and height while output is active
+- while output is stopped, width and height can be changed again before the next start
+- `public/output.js` follows output-size changes between runs so an already-open output page picks up the next started resolution
+- the hidden Electron offscreen renderer uses that same active output size
+- the NDI sender uses that same active output size
 
 This keeps browser output and NDI output matched at all times.
 

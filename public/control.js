@@ -15,6 +15,7 @@ const elements = {
   outputHeightInput: document.querySelector('#output-height-input'),
   outputPresetName: document.querySelector('#output-preset-name'),
   outputPresetSelect: document.querySelector('#output-preset-select'),
+  outputSizeLock: document.querySelector('#output-size-lock'),
   outputStatus: document.querySelector('#output-status'),
   outputSummary: document.querySelector('#output-summary'),
   outputUrl: document.querySelector('#output-url'),
@@ -149,8 +150,14 @@ function renderConfig() {
 function renderOutputState() {
   elements.outputStatus.textContent = outputState.active ? 'Running' : 'Stopped';
   elements.outputSummary.textContent = `${outputState.width} x ${outputState.height}`;
+  elements.outputSizeLock.textContent = outputState.active
+    ? `Locked while running at ${outputState.width} x ${outputState.height}`
+    : 'Unlocked';
   elements.startOutput.disabled = outputState.active;
   elements.stopOutput.disabled = !outputState.active;
+  elements.outputPresetSelect.disabled = outputState.active;
+  elements.outputWidthInput.disabled = outputState.active;
+  elements.outputHeightInput.disabled = outputState.active;
 }
 
 function renderNdiStatus() {
@@ -202,6 +209,10 @@ async function initialise() {
 }
 
 elements.outputPresetSelect.addEventListener('change', () => {
+  if (outputState.sizeLocked) {
+    return;
+  }
+
   const selectedPreset = getSelectedPreset();
 
   if (!selectedPreset) {

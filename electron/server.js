@@ -149,6 +149,7 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
   let outputState = {
     active: false,
     height: 720,
+    sizeLocked: false,
     width: 1280
   };
 
@@ -180,8 +181,19 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
         const rawBody = await readRequestBody(req);
         const payload = rawBody ? JSON.parse(rawBody) : {};
         const nextDimensions = normaliseDimensions(payload, outputState);
+
+        if (
+          outputState.active &&
+          (nextDimensions.width !== outputState.width || nextDimensions.height !== outputState.height)
+        ) {
+          return json(res, 409, {
+            error: `Output size is locked to ${outputState.width}x${outputState.height} while output is running.`
+          });
+        }
+
         const nextOutputState = {
           active: true,
+          sizeLocked: true,
           ...nextDimensions
         };
 
@@ -201,9 +213,9 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
         try {
           const ndiStatus = await ndiController.start({
             fps: payload.fps,
-            height: nextDimensions.height,
+            height: nextOutputState.height,
             sourceName: payload.sourceName,
-            width: nextDimensions.width
+            width: nextOutputState.width
           });
 
           return json(res, 200, {
@@ -213,7 +225,8 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
         } catch (error) {
           outputState = {
             ...nextOutputState,
-            active: false
+            active: false,
+            sizeLocked: false
           };
 
           return json(res, 500, {
@@ -230,7 +243,8 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
     if (req.method === 'POST' && requestUrl.pathname === '/api/output/stop') {
       outputState = {
         ...outputState,
-        active: false
+        active: false,
+        sizeLocked: false
       };
 
       let ndiStatus = {
