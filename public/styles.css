@@ -69,6 +69,45 @@ body {
   gap: 6px;
 }
 
+.control-page input,
+.control-page select,
+.control-page button {
+  font: inherit;
+}
+
+.control-page input,
+.control-page select {
+  min-width: 180px;
+  padding: 8px 10px;
+  color: #fff;
+  border: 1px solid #69727d;
+  background: #101418;
+}
+
+.control-page button {
+  padding: 8px 12px;
+  color: #fff;
+  border: 1px solid #69727d;
+  background: #16212d;
+  cursor: pointer;
+}
+
+.control-page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.checkbox-label label {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 100%;
+}
+
+.checkbox-label input {
+  min-width: auto;
+}
+
 .control-page a {
   color: #fff;
 }
@@ -76,7 +115,8 @@ body {
 .control-page #output-summary,
 .control-page #ndi-message,
 .control-page #ndi-status,
-.control-page #ndi-reason {
+ .control-page #ndi-reason,
+ .control-page #story-status {
   word-break: break-word;
 }
 

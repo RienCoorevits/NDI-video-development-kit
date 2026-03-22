@@ -68,7 +68,70 @@
         <p>Output Status: <strong id="output-status"></strong></p>
       </section>
 
+      <section class="control-section">
+        <h2>Story Direction</h2>
+        <div class="field-row">
+          <p>
+            <label>
+              Seed
+              <input id="story-seed-input" type="text" value="achmed-1926" autocomplete="off">
+            </label>
+          </p>
+          <p>
+            <label>
+              Chapter
+              <select id="story-chapter-select">
+                <option value="wander">Wander</option>
+                <option value="palace">Palace</option>
+                <option value="flight">Flight</option>
+                <option value="sorcery">Sorcery</option>
+              </select>
+            </label>
+          </p>
+          <p>
+            <label>
+              Palette
+              <select id="story-palette-select">
+                <option value="moonrise">Moonrise</option>
+                <option value="sunset">Sunset</option>
+                <option value="emerald">Emerald</option>
+              </select>
+            </label>
+          </p>
+          <p>
+            <label>
+              Density
+              <select id="story-density-select">
+                <option value="spare">Spare</option>
+                <option value="medium">Medium</option>
+                <option value="ornate">Ornate</option>
+              </select>
+            </label>
+          </p>
+        </div>
 
+        <div class="field-row">
+          <p>
+            <label>
+              Beat Duration (ms)
+              <input id="story-beat-duration-input" type="number" min="2000" max="30000" step="500" value="9000">
+            </label>
+          </p>
+          <p class="checkbox-label">
+            <label>
+              <span>Auto Advance</span>
+              <input id="story-auto-advance-input" type="checkbox" checked>
+            </label>
+          </p>
+        </div>
+
+        <p>
+          <button id="save-story-settings">Apply Story Settings</button>
+          <button id="story-next-beat">Next Beat</button>
+          <button id="story-random-seed">Random Seed</button>
+        </p>
+        <p>Story State: <strong id="story-status"></strong></p>
+      </section>
 
       <section class="control-section">
         <h2>NDI</h2>

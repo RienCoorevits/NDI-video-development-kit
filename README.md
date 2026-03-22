@@ -99,6 +99,54 @@ When you need more than the current baseline controls:
 
 In short: build the artwork in `public/output.js`, build the operator experience in `public/control.js`, and use Electron plus NDI only when you need to deliver the browser-rendered stage to external displays or other video systems.
 
+## Procedural story scaffold
+
+The repo now includes a first pass at a story-runtime split for Achmed-style generative cinema:
+
+- `public/story/asset-manifest.js` defines palettes, locations, chapters, and the future Animate clip contract.
+- `public/story/director.js` chooses the next beat from the seed, chapter, density, palette, and cue index.
+- `public/story/render.js` draws the current beat as silhouette cutout-style stage composition.
+- `public/story/engine.js` keeps browser story state in sync with the control API and advances beats over time.
+
+The control page now includes story-direction controls for:
+
+- seed
+- chapter
+- palette
+- density
+- beat duration
+- auto-advance
+- manual next-beat cue
+- random-seed regeneration
+
+This is intentionally a scaffold, not a finished animation system. It establishes the separation between:
+
+- operator state
+- story direction logic
+- rendering
+- future asset-backed clips
+
+## Adobe Animate workflow
+
+Use Adobe Animate to author reusable visual parts, not whole endless scenes.
+
+Recommended asset types:
+
+- character loops: walk, ride, idle, summon, hover
+- foreground overlays: palms, branches, arches, smoke, curtains
+- background motifs: palace domes, dunes, cliffs, moonlit trees
+- atmospheric loops: birds, haze, magical particles, cloud drift
+
+Recommended export strategy:
+
+1. Keep each exported Animate symbol isolated and transparent.
+2. Export short looping clips rather than one monolithic scene timeline.
+3. Give each clip a stable registration point so the runtime can place it deterministically.
+4. Map those clips into `public/story/asset-manifest.js`.
+5. Let the runtime decide where, when, and how often the clips appear.
+
+The current renderer is procedural fallback art. When you are ready, replace specific procedural actors or foreground elements with Animate-derived clips one layer at a time.
+
 ## Libraries folder
 
 Files placed in [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) are served by the app at `/libraries/*`.

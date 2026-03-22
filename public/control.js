@@ -6,6 +6,16 @@ const BUILTIN_PRESETS = [
   { height: 1920, id: 'builtin:portrait-hd', name: 'Portrait 1080x1920', width: 1080 }
 ];
 
+const DEFAULT_STORY_STATE = {
+  autoAdvance: true,
+  beatDurationMs: 9000,
+  chapter: 'wander',
+  cueIndex: 0,
+  density: 'medium',
+  palette: 'moonrise',
+  seed: 'achmed-1926'
+};
+
 const elements = {
   controlUrl: document.querySelector('#control-url'),
   deleteOutputPreset: document.querySelector('#delete-output-preset'),
@@ -21,8 +31,18 @@ const elements = {
   outputUrl: document.querySelector('#output-url'),
   outputWidthInput: document.querySelector('#output-width-input'),
   saveOutputPreset: document.querySelector('#save-output-preset'),
+  saveStorySettings: document.querySelector('#save-story-settings'),
   startOutput: document.querySelector('#start-output'),
-  stopOutput: document.querySelector('#stop-output')
+  stopOutput: document.querySelector('#stop-output'),
+  storyAutoAdvanceInput: document.querySelector('#story-auto-advance-input'),
+  storyBeatDurationInput: document.querySelector('#story-beat-duration-input'),
+  storyChapterSelect: document.querySelector('#story-chapter-select'),
+  storyDensitySelect: document.querySelector('#story-density-select'),
+  storyNextBeat: document.querySelector('#story-next-beat'),
+  storyPaletteSelect: document.querySelector('#story-palette-select'),
+  storyRandomSeed: document.querySelector('#story-random-seed'),
+  storySeedInput: document.querySelector('#story-seed-input'),
+  storyStatus: document.querySelector('#story-status')
 };
 
 let currentConfig = null;
@@ -33,6 +53,7 @@ let outputState = {
   width: Number(elements.outputWidthInput.value)
 };
 let outputPresets = [];
+let storyState = { ...DEFAULT_STORY_STATE };
 
 function syncInputValue(input, value) {
   if (document.activeElement === input) {
@@ -40,6 +61,14 @@ function syncInputValue(input, value) {
   }
 
   input.value = value;
+}
+
+function syncCheckboxValue(input, value) {
+  if (document.activeElement === input) {
+    return;
+  }
+
+  input.checked = value;
 }
 
 function getCustomPresets() {
@@ -160,6 +189,23 @@ function renderOutputState() {
   elements.outputHeightInput.disabled = outputState.active;
 }
 
+function renderStoryState() {
+  syncInputValue(elements.storySeedInput, storyState.seed);
+  syncInputValue(elements.storyBeatDurationInput, String(storyState.beatDurationMs));
+  syncInputValue(elements.storyChapterSelect, storyState.chapter);
+  syncInputValue(elements.storyPaletteSelect, storyState.palette);
+  syncInputValue(elements.storyDensitySelect, storyState.density);
+  syncCheckboxValue(elements.storyAutoAdvanceInput, Boolean(storyState.autoAdvance));
+
+  elements.storyStatus.textContent = [
+    storyState.chapter,
+    storyState.palette,
+    storyState.density,
+    `cue ${storyState.cueIndex}`,
+    storyState.autoAdvance ? 'auto' : 'manual'
+  ].join(' / ');
+}
+
 function renderNdiStatus() {
   if (!ndiStatus) {
     return;
@@ -188,17 +234,20 @@ function render() {
   renderConfig();
   renderPresetOptions();
   renderOutputState();
+  renderStoryState();
   renderNdiStatus();
 }
 
 async function refreshStatuses() {
-  const [nextOutputState, nextNdiStatus] = await Promise.all([
+  const [nextOutputState, nextNdiStatus, nextStoryState] = await Promise.all([
     fetchJson('/api/output/status'),
-    fetchJson('/api/ndi/status')
+    fetchJson('/api/ndi/status'),
+    fetchJson('/api/story/status')
   ]);
 
   outputState = nextOutputState;
   ndiStatus = nextNdiStatus;
+  storyState = nextStoryState;
   render();
 }
 
@@ -206,6 +255,20 @@ async function initialise() {
   loadOutputPresets();
   currentConfig = await fetchJson('/api/config');
   await refreshStatuses();
+}
+
+async function applyStorySettings() {
+  const response = await postJson('/api/story/update', {
+    autoAdvance: elements.storyAutoAdvanceInput.checked,
+    beatDurationMs: Number(elements.storyBeatDurationInput.value),
+    chapter: elements.storyChapterSelect.value,
+    density: elements.storyDensitySelect.value,
+    palette: elements.storyPaletteSelect.value,
+    seed: elements.storySeedInput.value.trim()
+  });
+
+  storyState = response.storyState;
+  render();
 }
 
 elements.outputPresetSelect.addEventListener('change', () => {
@@ -287,6 +350,22 @@ elements.stopOutput.addEventListener('click', async () => {
   const response = await postJson('/api/output/stop');
   outputState = response.outputState;
   ndiStatus = response.ndiStatus;
+  render();
+});
+
+elements.saveStorySettings.addEventListener('click', async () => {
+  await applyStorySettings();
+});
+
+elements.storyNextBeat.addEventListener('click', async () => {
+  const response = await postJson('/api/story/next');
+  storyState = response.storyState;
+  render();
+});
+
+elements.storyRandomSeed.addEventListener('click', async () => {
+  const response = await postJson('/api/story/randomize');
+  storyState = response.storyState;
   render();
 });
 

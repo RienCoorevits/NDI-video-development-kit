@@ -15,6 +15,10 @@ const CONTENT_TYPES = {
   '.json': 'application/json; charset=utf-8'
 };
 
+const STORY_CHAPTERS = new Set(['wander', 'palace', 'flight', 'sorcery']);
+const STORY_DENSITIES = new Set(['spare', 'medium', 'ornate']);
+const STORY_PALETTES = new Set(['moonrise', 'sunset', 'emerald']);
+
 function json(res, statusCode, payload) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8'
@@ -145,6 +149,34 @@ function normaliseDimensions(payload, fallback) {
   };
 }
 
+function createSeedToken() {
+  return `achmed-${Date.now().toString(36)}`;
+}
+
+function normaliseStoryState(payload, fallback = {}) {
+  const seedCandidate = String(payload.seed ?? fallback.seed ?? '').trim();
+  const chapterCandidate = String(payload.chapter ?? fallback.chapter ?? 'wander').trim();
+  const densityCandidate = String(payload.density ?? fallback.density ?? 'medium').trim();
+  const paletteCandidate = String(payload.palette ?? fallback.palette ?? 'moonrise').trim();
+  const beatDurationCandidate = Number(payload.beatDurationMs ?? fallback.beatDurationMs ?? 9000);
+  const cueIndexCandidate = Number(payload.cueIndex ?? fallback.cueIndex ?? 0);
+  const revisionCandidate = Number(payload.revision ?? fallback.revision ?? 0);
+  const autoAdvanceValue = payload.autoAdvance ?? fallback.autoAdvance ?? true;
+
+  return {
+    autoAdvance: typeof autoAdvanceValue === 'string'
+      ? autoAdvanceValue !== 'false'
+      : Boolean(autoAdvanceValue),
+    beatDurationMs: Math.max(2000, Math.min(30000, Number.isFinite(beatDurationCandidate) ? beatDurationCandidate : 9000)),
+    chapter: STORY_CHAPTERS.has(chapterCandidate) ? chapterCandidate : 'wander',
+    cueIndex: Number.isFinite(cueIndexCandidate) ? Math.max(0, Math.floor(cueIndexCandidate)) : 0,
+    density: STORY_DENSITIES.has(densityCandidate) ? densityCandidate : 'medium',
+    palette: STORY_PALETTES.has(paletteCandidate) ? paletteCandidate : 'moonrise',
+    revision: Number.isFinite(revisionCandidate) ? Math.max(0, Math.floor(revisionCandidate)) : 0,
+    seed: seedCandidate || createSeedToken()
+  };
+}
+
 export async function startServer({ host = '127.0.0.1', port = 3030, ndiController = null, dev = false } = {}) {
   let outputState = {
     active: false,
@@ -152,6 +184,16 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
     sizeLocked: false,
     width: 1280
   };
+  let storyState = normaliseStoryState({
+    autoAdvance: true,
+    beatDurationMs: 9000,
+    chapter: 'wander',
+    cueIndex: 0,
+    density: 'medium',
+    palette: 'moonrise',
+    revision: 0,
+    seed: 'achmed-1926'
+  });
 
   const server = http.createServer(async (req, res) => {
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
@@ -174,6 +216,10 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/output/status') {
       return json(res, 200, outputState);
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/story/status') {
+      return json(res, 200, storyState);
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/output/start') {
@@ -260,6 +306,53 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
       return json(res, 200, {
         ndiStatus,
         outputState
+      });
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/story/update') {
+      try {
+        const rawBody = await readRequestBody(req);
+        const payload = rawBody ? JSON.parse(rawBody) : {};
+        const nextStoryState = normaliseStoryState({
+          ...storyState,
+          ...payload,
+          revision: storyState.revision + 1
+        }, storyState);
+
+        storyState = nextStoryState;
+
+        return json(res, 200, {
+          storyState
+        });
+      } catch (error) {
+        return json(res, 400, {
+          error: error instanceof Error ? error.message : 'Expected valid JSON.'
+        });
+      }
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/story/next') {
+      storyState = normaliseStoryState({
+        ...storyState,
+        cueIndex: storyState.cueIndex + 1,
+        revision: storyState.revision + 1
+      }, storyState);
+
+      return json(res, 200, {
+        storyState
+      });
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/story/randomize') {
+      storyState = normaliseStoryState({
+        ...storyState,
+        cueIndex: 0,
+        revision: storyState.revision + 1,
+        seed: createSeedToken()
+      }, storyState);
+
+      return json(res, 200, {
+        storyState
       });
     }
 
