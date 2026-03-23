@@ -75,9 +75,12 @@ Commands:
   clean-plate <input-or-dir> [--method median|average] [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg]
       Build a legacy temporal clean plate from ${DEFAULT_VIDEO_ROOT}.
 
+  clean-plate-stack <input-or-dir> [--samples <n>|all] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg] [--prefer-bright] [--bright-window <n>] [--bright-percentile <n>] [--bright-min-samples <n>]
+      Build a Photoshop-style median stack clean plate from any video path. Stabilized input is recommended.
+
   clean-plate-masked <input-or-dir> [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg] [--threshold <n>] [--grow <n>]
       Build a masked clean plate from stabilized shots in ${DEFAULT_STABILIZE_ROOT}.
-      This is the recommended Achmed-oriented clean-plate workflow after rigid stabilization.
+      This is an alternate experimental workflow.
 
 Options:
   --help
@@ -95,6 +98,10 @@ Examples:
   npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4
   npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
   npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24
+  npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples 48
+  npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all
+  npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all --prefer-bright
+  npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all --prefer-bright --bright-percentile 35
   npm run media -- clean-plate-masked Images/Stabilize/Scenes/Scene1.mp4 --samples 24 --threshold 45 --grow 2
 `.trim());
 }
@@ -246,6 +253,14 @@ function buildMirroredPath(inputAbsolutePath, sourceRoot, outputRoot, extension,
   return path.join(outputRootPath, relativeDirectory, `${basename}.${extension}`);
 }
 
+function tryBuildMirroredPath(inputAbsolutePath, sourceRoot, outputRoot, extension, options = {}) {
+  try {
+    return buildMirroredPath(inputAbsolutePath, sourceRoot, outputRoot, extension, options);
+  } catch {
+    return null;
+  }
+}
+
 function buildMirroredSequenceDir(inputAbsolutePath) {
   return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_SEQUENCE_ROOT, 'png', {
     nestByBasename: true
@@ -264,6 +279,31 @@ function buildMirroredLegacyCleanPlatePath(inputAbsolutePath, format) {
 function buildMirroredMaskedCleanPlatePath(inputAbsolutePath, format) {
   const extension = format === 'jpeg' ? 'jpg' : format;
   return buildMirroredPath(inputAbsolutePath, DEFAULT_STABILIZE_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension);
+}
+
+function buildFlexibleCleanPlatePath(inputAbsolutePath, format, batchRoot = null) {
+  const extension = format === 'jpeg' ? 'jpg' : format;
+  const mirroredPath = (
+    tryBuildMirroredPath(inputAbsolutePath, DEFAULT_STABILIZE_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension) ||
+    tryBuildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension)
+  );
+
+  if (mirroredPath) {
+    return mirroredPath;
+  }
+
+  if (batchRoot) {
+    const relativeInputPath = path.relative(batchRoot, inputAbsolutePath);
+
+    if (!relativeInputPath.startsWith('..') && !path.isAbsolute(relativeInputPath)) {
+      const relativeDirectory = path.dirname(relativeInputPath);
+      const basename = path.basename(inputAbsolutePath, path.extname(inputAbsolutePath));
+      return path.join(PROJECT_ROOT, 'output', 'clean-plates', relativeDirectory, `${basename}.${extension}`);
+    }
+  }
+
+  const basename = path.basename(inputAbsolutePath, path.extname(inputAbsolutePath));
+  return path.join(PROJECT_ROOT, 'output', `${basename}-clean-plate-stack.${extension}`);
 }
 
 async function ensureParentDir(filePath) {
@@ -374,7 +414,7 @@ async function getVideoInfo(inputAbsolutePath) {
     '-print_format',
     'json',
     '-show_entries',
-    'stream=width,height:format=duration',
+    'stream=width,height,avg_frame_rate,r_frame_rate,nb_frames:format=duration',
     inputAbsolutePath
   ], {
     inheritStdio: false
@@ -390,8 +430,21 @@ async function getVideoInfo(inputAbsolutePath) {
     throw new Error(`Unable to determine video metadata for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
   }
 
+  const frameRateSource = String(videoStream.avg_frame_rate || videoStream.r_frame_rate || '0/0');
+  const [frameRateNumerator, frameRateDenominator] = frameRateSource.split('/').map((part) => Number(part));
+  const fps = (
+    Number.isFinite(frameRateNumerator) &&
+    Number.isFinite(frameRateDenominator) &&
+    frameRateDenominator > 0
+  )
+    ? frameRateNumerator / frameRateDenominator
+    : 0;
+  const frameCount = Number(videoStream.nb_frames);
+
   return {
     durationSeconds,
+    fps: Number.isFinite(fps) && fps > 0 ? fps : 0,
+    frameCount: Number.isFinite(frameCount) && frameCount > 0 ? Math.floor(frameCount) : null,
     height: Number(videoStream.height),
     width: Number(videoStream.width)
   };
@@ -414,6 +467,16 @@ function computeScaledDimensions(width, height, targetWidth = null) {
   };
 }
 
+function inferRgbaFrameHeight(frame, width) {
+  const rowSize = width * 4;
+
+  if (rowSize <= 0 || frame.length % rowSize !== 0) {
+    return null;
+  }
+
+  return frame.length / rowSize;
+}
+
 function parsePositiveInteger(value, label, { min = 1 } = {}) {
   const numericValue = Number(value);
 
@@ -422,6 +485,59 @@ function parsePositiveInteger(value, label, { min = 1 } = {}) {
   }
 
   return Math.floor(numericValue);
+}
+
+function parsePercentage(value, label) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || numericValue > 100) {
+    throw new Error(`${label} must be greater than 0 and less than or equal to 100`);
+  }
+
+  return numericValue;
+}
+
+function parseStackSamplesOption(value) {
+  if (value === undefined || value === null || value === '') {
+    return 48;
+  }
+
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'all') {
+    return 'all';
+  }
+
+  return parsePositiveInteger(value, 'clean-plate-stack --samples', { min: 3 });
+}
+
+function buildStackSampleTimes(videoInfo, startSeconds, plateDurationSeconds, samplesOption) {
+  if (samplesOption !== 'all') {
+    return Array.from({ length: samplesOption }, (_, index) => {
+      const ratio = samplesOption === 1 ? 0.5 : (index + 0.5) / samplesOption;
+      return startSeconds + plateDurationSeconds * ratio;
+    });
+  }
+
+  const fps = videoInfo.fps;
+
+  if (!Number.isFinite(fps) || fps <= 0) {
+    throw new Error('clean-plate-stack --samples all requires readable frame-rate metadata');
+  }
+
+  const startFrame = Math.max(0, Math.floor(startSeconds * fps));
+  const endSeconds = startSeconds + plateDurationSeconds;
+  let endFrameExclusive = Math.max(startFrame + 1, Math.ceil(endSeconds * fps));
+
+  if (videoInfo.frameCount) {
+    endFrameExclusive = Math.min(endFrameExclusive, videoInfo.frameCount);
+  }
+
+  const sampleTimes = [];
+
+  for (let frameIndex = startFrame; frameIndex < endFrameExclusive; frameIndex += 1) {
+    sampleTimes.push(frameIndex / fps);
+  }
+
+  return sampleTimes;
 }
 
 function pixelLuma(red, green, blue) {
@@ -435,6 +551,110 @@ function medianFromValues(values) {
 
   values.sort((left, right) => left - right);
   return values[Math.floor(values.length / 2)];
+}
+
+function parseBrightBiasOptions(options, sampleCount) {
+  const preferBright = Boolean(options['prefer-bright']);
+
+  if (!preferBright) {
+    return null;
+  }
+
+  const brightWindow = options['bright-window'] === undefined
+    ? 24
+    : parsePositiveInteger(options['bright-window'], 'clean-plate-stack --bright-window');
+  const brightPercentile = options['bright-percentile'] === undefined
+    ? null
+    : parsePercentage(options['bright-percentile'], 'clean-plate-stack --bright-percentile');
+  const brightMinSamples = options['bright-min-samples'] === undefined
+    ? Math.min(sampleCount, Math.max(3, Math.ceil(sampleCount * 0.15)))
+    : parsePositiveInteger(options['bright-min-samples'], 'clean-plate-stack --bright-min-samples');
+
+  return {
+    brightMinSamples: Math.min(sampleCount, brightMinSamples),
+    brightPercentile,
+    brightWindow
+  };
+}
+
+function composeMedianPlate(frames, width, height, brightBias = null) {
+  const output = new Uint8Array(width * height * 4);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const valuesR = [];
+    const valuesG = [];
+    const valuesB = [];
+    const valuesLuma = [];
+
+    for (const frame of frames) {
+      const pixelOffset = index * 4;
+      valuesR.push(frame[pixelOffset]);
+      valuesG.push(frame[pixelOffset + 1]);
+      valuesB.push(frame[pixelOffset + 2]);
+      valuesLuma.push(pixelLuma(
+        frame[pixelOffset],
+        frame[pixelOffset + 1],
+        frame[pixelOffset + 2]
+      ));
+    }
+
+    if (brightBias) {
+      const brightValuesR = [];
+      const brightValuesG = [];
+      const brightValuesB = [];
+
+      if (brightBias.brightPercentile !== null) {
+        const orderedIndices = valuesLuma
+          .map((luma, sampleIndex) => ({ luma, sampleIndex }))
+          .sort((left, right) => right.luma - left.luma);
+        const keepCount = Math.ceil((orderedIndices.length * brightBias.brightPercentile) / 100);
+
+        for (let sampleIndex = 0; sampleIndex < keepCount; sampleIndex += 1) {
+          const orderedSampleIndex = orderedIndices[sampleIndex].sampleIndex;
+          brightValuesR.push(valuesR[orderedSampleIndex]);
+          brightValuesG.push(valuesG[orderedSampleIndex]);
+          brightValuesB.push(valuesB[orderedSampleIndex]);
+        }
+      } else {
+        let maxLuma = 0;
+
+        for (const luma of valuesLuma) {
+          if (luma > maxLuma) {
+            maxLuma = luma;
+          }
+        }
+
+        const lumaFloor = maxLuma - brightBias.brightWindow;
+
+        for (let sampleIndex = 0; sampleIndex < valuesLuma.length; sampleIndex += 1) {
+          if (valuesLuma[sampleIndex] < lumaFloor) {
+            continue;
+          }
+
+          brightValuesR.push(valuesR[sampleIndex]);
+          brightValuesG.push(valuesG[sampleIndex]);
+          brightValuesB.push(valuesB[sampleIndex]);
+        }
+      }
+
+      if (brightValuesR.length >= brightBias.brightMinSamples) {
+        valuesR.length = 0;
+        valuesG.length = 0;
+        valuesB.length = 0;
+        valuesR.push(...brightValuesR);
+        valuesG.push(...brightValuesG);
+        valuesB.push(...brightValuesB);
+      }
+    }
+
+    const pixelOffset = index * 4;
+    output[pixelOffset] = medianFromValues(valuesR);
+    output[pixelOffset + 1] = medianFromValues(valuesG);
+    output[pixelOffset + 2] = medianFromValues(valuesB);
+    output[pixelOffset + 3] = 255;
+  }
+
+  return output;
 }
 
 function dilateMask(mask, width, height, radius) {
@@ -1161,6 +1381,96 @@ async function handleCleanPlate(inputPath, options) {
   }
 }
 
+async function createMedianStackCleanPlate(inputAbsolutePath, options, batchRoot = null) {
+  const format = String(options.format || 'png').toLowerCase();
+  const samples = parseStackSamplesOption(options.samples);
+
+  if (!['png', 'jpg', 'jpeg'].includes(format)) {
+    throw new Error('clean-plate-stack --format must be png, jpg, or jpeg');
+  }
+
+  const outputPath = options.output
+    ? resolveProjectPath(String(options.output))
+    : buildFlexibleCleanPlatePath(inputAbsolutePath, format, batchRoot);
+
+  const videoInfo = await getVideoInfo(inputAbsolutePath);
+  const startSeconds = parseTimeValue(options.start, 'clean-plate-stack --start') ?? 0;
+  const plateDurationSeconds = parseTimeValue(options.duration, 'clean-plate-stack --duration')
+    ?? Math.max(0, videoInfo.durationSeconds - startSeconds);
+
+  if (plateDurationSeconds <= 0) {
+    throw new Error('clean-plate-stack --duration must be greater than 0 seconds');
+  }
+
+  const scaledSize = computeScaledDimensions(videoInfo.width, videoInfo.height, options.width ? Number(options.width) : null);
+  const frames = [];
+  const sampleTimes = buildStackSampleTimes(videoInfo, startSeconds, plateDurationSeconds, samples);
+  let frameHeight = scaledSize.height;
+
+  for (const sampleTime of sampleTimes) {
+    const frame = await extractFrameRgba(inputAbsolutePath, sampleTime, scaledSize.width);
+
+    if (frame.length === 0) {
+      continue;
+    }
+
+    const inferredHeight = inferRgbaFrameHeight(frame, scaledSize.width);
+
+    if (!inferredHeight) {
+      throw new Error(`Unexpected raw frame size for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+    }
+
+    if (frames.length === 0) {
+      frameHeight = inferredHeight;
+    }
+
+    if (inferredHeight !== frameHeight) {
+      throw new Error(`Inconsistent raw frame size for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+    }
+
+    frames.push(frame);
+  }
+
+  if (frames.length === 0) {
+    throw new Error(`Unable to extract any frames for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+  }
+
+  const brightBias = parseBrightBiasOptions(options, frames.length);
+  const output = composeMedianPlate(frames, scaledSize.width, frameHeight, brightBias);
+  await writeRgbaImage(outputPath, output, scaledSize.width, frameHeight);
+  console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
+}
+
+async function handleCleanPlateStack(inputPath, options) {
+  await ensureFfmpeg();
+
+  const targetPath = await validateInputPath(inputPath || DEFAULT_STABILIZE_ROOT);
+  const targetIsDirectory = await isDirectory(targetPath);
+
+  if (!targetIsDirectory) {
+    if (!VIDEO_EXTENSIONS.has(path.extname(targetPath).toLowerCase())) {
+      throw new Error('clean-plate-stack input file must be a supported video format');
+    }
+
+    await createMedianStackCleanPlate(targetPath, options);
+    return;
+  }
+
+  const videoFiles = await collectVideoFiles(targetPath);
+
+  if (videoFiles.length === 0) {
+    console.log('No video files found.');
+    return;
+  }
+
+  for (const filePath of videoFiles) {
+    await createMedianStackCleanPlate(filePath, {
+      ...options,
+      output: undefined
+    }, targetPath);
+  }
+}
+
 async function createMaskedCleanPlate(inputAbsolutePath, options) {
   const format = String(options.format || 'png').toLowerCase();
   const threshold = options.threshold ? Number(options.threshold) : 45;
@@ -1320,6 +1630,11 @@ async function main() {
 
   if (command === 'clean-plate') {
     await handleCleanPlate(positional[0] || DEFAULT_VIDEO_ROOT, options);
+    return;
+  }
+
+  if (command === 'clean-plate-stack') {
+    await handleCleanPlateStack(positional[0] || DEFAULT_STABILIZE_ROOT, options);
     return;
   }
 

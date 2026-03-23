@@ -121,7 +121,6 @@ npm run media -- video-to-sequence "Images/Video/Locations/Location 2.mp4" --fps
 ```
 
 ## Stabilizing
-this method currently is to timmid
 
 Stabilize a shot into `Images/Stabilize/...`:
 
@@ -136,33 +135,46 @@ npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 2
 ```
 
 ## Clean plate masking
-this method is currently to harsh
-
-Build the advanced masked clean plate from the stabilized result:
+Build the Photoshop-style median stack clean plate from the stabilized result:
 
 ```bash
-npm run media -- clean-plate-masked Images/Stabilize/Scenes/Scene1.mp4 --samples 24 --threshold 45 --grow 2
+npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples 48
 ```
 
-Batch stabilized outputs:
+Use every frame in the selected span:
 
 ```bash
-npm run media -- stabilize-shot Images/Video/Scenes
+--samples all
 ```
 
-Batch masked clean plates from stabilized shots:
+Bias the stack toward brighter pixels when the actors are darker than the background:
 
 ```bash
-npm run media -- clean-plate-masked Images/Stabilize/Scenes --samples 16 --width 1280 --threshold 45 --grow 2
+--prefer-bright
+```
+
+Or keep the top brightest percentile of samples per pixel:
+
+```bash
+--prefer-bright --bright-percentile 35
 ```
 
 Advanced clean plate note:
 
-- the recommended flow is `stabilize-shot` first, then `clean-plate-masked`
+- the recommended flow is `stabilize-shot` first, then `clean-plate-stack`
 - `stabilize-shot` now uses rigid stabilization only: x/y drift plus rotation, with no perspective warp
 - it estimates euclidean motion, rejects large outlier jumps, and smooths the remaining motion before rendering the stabilized shot
-- `clean-plate-masked` samples the stabilized shot, thresholds dark silhouettes, expands the mask slightly, and rebuilds the plate from unmasked pixels
-- this is a better fit for Achmed-style silhouette footage than blind averaging
+- `clean-plate-stack` is intended to mirror the Photoshop workflow: aligned frame stack first, then a straight per-pixel median across the sampled frames
+- the default stack sampling is `48`; `--samples all` uses one sample per source frame inside the selected time range
+- `--prefer-bright` keeps only the brighter samples at each pixel when enough of them exist, then falls back to the full stack when they do not
+- `--bright-window` controls how close a sample's brightness must be to the brightest sample at that pixel; the default is `24`
+- `--bright-percentile` keeps the brightest fraction of samples at each pixel instead; for example `35` keeps the top 35 percent by luma
+- if `--bright-percentile` is set, it takes precedence over `--bright-window`
+- `--bright-min-samples` controls how many bright samples must survive before the command trusts that bright subset
+- if the input lives under `Images/Stabilize` or `Images/Video`, output still mirrors into `Images/CleanPlates`
+- for arbitrary files or folders elsewhere, output falls back to `output/clean-plates/...`
+- this usually works better when silhouettes keep moving through the frame and the stabilized shot is clean
+- `clean-plate-masked` is still available as an alternate experimental method when the plain stack median is not enough
 - if a figure covers the same region for too much of the shot, you may still need manual cleanup
 
 # Current baseline
