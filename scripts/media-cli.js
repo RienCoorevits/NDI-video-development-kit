@@ -9,6 +9,7 @@ const PROJECT_ROOT = process.cwd();
 const DEFAULT_MEDIA_DIR = 'Images/Scenes';
 const DEFAULT_VIDEO_ROOT = 'Images/Video';
 const DEFAULT_SEQUENCE_ROOT = 'Images/Sequences';
+const DEFAULT_CLEAN_PLATE_ROOT = 'Images/CleanPlates';
 const MEDIA_EXTENSIONS = new Set([
   '.mp4',
   '.mov',
@@ -65,6 +66,10 @@ Commands:
       Convert a video or a folder of videos from ${DEFAULT_VIDEO_ROOT} into image sequences under ${DEFAULT_SEQUENCE_ROOT}.
       The folder structure under Video is mirrored under Sequences, with one subfolder per source filename.
 
+  clean-plate <input-or-dir> [--method median|average] [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg]
+      Build a clean plate from a video or folder of videos in ${DEFAULT_VIDEO_ROOT}.
+      Outputs are mirrored under ${DEFAULT_CLEAN_PLATE_ROOT}.
+
 Options:
   --help
       Show this help.
@@ -79,6 +84,8 @@ Examples:
   npm run media -- transcode Images/Scenes/Scene1.mp4 --width 1280 --fps 24 --output output/scene1-h264.mp4
   npm run media -- video-to-sequence Images/Video/Scenes
   npm run media -- video-to-sequence Images/Video/Locations/'Location 2.mp4' --fps 12 --format jpg
+  npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24 --output output/scene1-clean-plate.png
+  npm run media -- clean-plate Images/Video/Scenes --samples 16 --width 1280
 `.trim());
 }
 
@@ -178,6 +185,25 @@ function buildOutputPath(inputPath, options, fallbackSuffix) {
   return path.join(PROJECT_ROOT, 'output', `${inputBasename}${fallbackSuffix}`);
 }
 
+function buildMirroredPath(inputAbsolutePath, sourceRoot, outputRoot, extension, { nestByBasename = false } = {}) {
+  const sourceRootPath = resolveProjectPath(sourceRoot);
+  const outputRootPath = resolveProjectPath(outputRoot);
+  const relativeInputPath = path.relative(sourceRootPath, inputAbsolutePath);
+
+  if (relativeInputPath.startsWith('..') || path.isAbsolute(relativeInputPath)) {
+    throw new Error(`Input must be inside ${sourceRoot}`);
+  }
+
+  const relativeDirectory = path.dirname(relativeInputPath);
+  const basename = path.basename(inputAbsolutePath, path.extname(inputAbsolutePath));
+
+  if (nestByBasename) {
+    return path.join(outputRootPath, relativeDirectory, basename);
+  }
+
+  return path.join(outputRootPath, relativeDirectory, `${basename}.${extension}`);
+}
+
 async function ensureParentDir(filePath) {
   await mkdir(path.dirname(filePath), {
     recursive: true
@@ -268,18 +294,14 @@ async function isDirectory(targetPath) {
 }
 
 function buildMirroredSequenceDir(inputAbsolutePath) {
-  const videoRootPath = resolveProjectPath(DEFAULT_VIDEO_ROOT);
-  const sequenceRootPath = resolveProjectPath(DEFAULT_SEQUENCE_ROOT);
-  const relativeInputPath = path.relative(videoRootPath, inputAbsolutePath);
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_SEQUENCE_ROOT, 'png', {
+    nestByBasename: true
+  });
+}
 
-  if (relativeInputPath.startsWith('..') || path.isAbsolute(relativeInputPath)) {
-    throw new Error(`Input must be inside ${DEFAULT_VIDEO_ROOT}`);
-  }
-
-  const relativeDirectory = path.dirname(relativeInputPath);
-  const basename = path.basename(inputAbsolutePath, path.extname(inputAbsolutePath));
-
-  return path.join(sequenceRootPath, relativeDirectory, basename);
+function buildMirroredCleanPlatePath(inputAbsolutePath, format) {
+  const extension = format === 'jpeg' ? 'jpg' : format;
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension);
 }
 
 async function handleList(targetDir) {
@@ -317,6 +339,29 @@ async function handleProbe(inputPath) {
   });
 
   console.log(result.stdout.trim());
+}
+
+async function getDurationSeconds(inputAbsolutePath) {
+  await ensureFfprobe();
+
+  const result = await spawnCommand('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'default=noprint_wrappers=1:nokey=1',
+    inputAbsolutePath
+  ], {
+    inheritStdio: false
+  });
+  const durationSeconds = Number(result.stdout.trim());
+
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error(`Unable to determine duration for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+  }
+
+  return durationSeconds;
 }
 
 async function handleTrim(inputPath, options) {
@@ -517,6 +562,151 @@ async function handleVideoToSequence(inputPath, options) {
   }
 }
 
+async function createCleanPlate(inputAbsolutePath, options) {
+  const format = String(options.format || 'png').toLowerCase();
+  const samples = options.samples ? Number(options.samples) : 24;
+  const method = String(options.method || 'median').toLowerCase();
+
+  if (!['png', 'jpg', 'jpeg'].includes(format)) {
+    throw new Error('clean-plate --format must be png, jpg, or jpeg');
+  }
+
+  if (!['average', 'median'].includes(method)) {
+    throw new Error('clean-plate --method must be either median or average');
+  }
+
+  if (!Number.isFinite(samples) || samples < (method === 'median' ? 3 : 2)) {
+    throw new Error(`clean-plate --samples must be at least ${method === 'median' ? 3 : 2} for ${method} mode`);
+  }
+
+  const outputPath = options.output
+    ? resolveProjectPath(String(options.output))
+    : buildMirroredCleanPlatePath(inputAbsolutePath, format);
+
+  await ensureParentDir(outputPath);
+
+  const fullDurationSeconds = await getDurationSeconds(inputAbsolutePath);
+  const startSeconds = options.start ? Number(options.start) : 0;
+  const plateDurationSeconds = options.duration ? Number(options.duration) : Math.max(0, fullDurationSeconds - startSeconds);
+
+  if (!Number.isFinite(startSeconds) || startSeconds < 0) {
+    throw new Error('clean-plate --start must be a non-negative number of seconds');
+  }
+
+  if (!Number.isFinite(plateDurationSeconds) || plateDurationSeconds <= 0) {
+    throw new Error('clean-plate --duration must be greater than 0 seconds');
+  }
+
+  if (method === 'average') {
+    const sampleFps = samples / plateDurationSeconds;
+    const weights = Array.from({
+      length: Math.floor(samples)
+    }, () => '1').join(' ');
+    const filters = [`fps=${sampleFps}`];
+
+    if (options.width) {
+      filters.push(`scale=${Number(options.width)}:-2`);
+    }
+
+    filters.push(`tmix=frames=${Math.floor(samples)}:weights='${weights}'`);
+
+    const args = ['-y'];
+
+    if (startSeconds > 0) {
+      args.push('-ss', String(startSeconds));
+    }
+
+    args.push('-i', inputAbsolutePath);
+
+    if (plateDurationSeconds < fullDurationSeconds) {
+      args.push('-t', String(plateDurationSeconds));
+    }
+
+    args.push(
+      '-an',
+      '-vf',
+      filters.join(','),
+      '-update',
+      '1',
+      outputPath
+    );
+
+    await spawnCommand('ffmpeg', args);
+    console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
+    return;
+  }
+
+  const sampleCount = Math.floor(samples);
+  const args = ['-y'];
+  const filterChains = [];
+  const medianInputs = [];
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const ratio = sampleCount === 1 ? 0.5 : (index + 0.5) / sampleCount;
+    const sampleTime = startSeconds + plateDurationSeconds * ratio;
+
+    args.push('-ss', String(sampleTime), '-i', inputAbsolutePath);
+
+    const sourceLabel = `${index}:v`;
+    const outputLabel = `v${index}`;
+
+    if (options.width) {
+      filterChains.push(`[${sourceLabel}]scale=${Number(options.width)}:-2[${outputLabel}]`);
+      medianInputs.push(`[${outputLabel}]`);
+    } else {
+      medianInputs.push(`[${sourceLabel}]`);
+    }
+  }
+
+  filterChains.push(`${medianInputs.join('')}xmedian=inputs=${sampleCount}[plate]`);
+
+  args.push(
+    '-an',
+    '-filter_complex',
+    filterChains.join(';'),
+    '-map',
+    '[plate]',
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    outputPath
+  );
+
+  await spawnCommand('ffmpeg', args);
+  console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
+}
+
+async function handleCleanPlate(inputPath, options) {
+  await ensureFfmpeg();
+
+  const targetPath = await validateInputPath(inputPath || DEFAULT_VIDEO_ROOT);
+  const targetIsDirectory = await isDirectory(targetPath);
+
+  if (!targetIsDirectory) {
+    if (!VIDEO_EXTENSIONS.has(path.extname(targetPath).toLowerCase())) {
+      throw new Error('clean-plate input file must be a supported video format');
+    }
+
+    await createCleanPlate(targetPath, options);
+    return;
+  }
+
+  const videoFiles = await collectVideoFiles(targetPath);
+
+  if (videoFiles.length === 0) {
+    console.log('No video files found.');
+    return;
+  }
+
+  for (const filePath of videoFiles) {
+    await createCleanPlate(filePath, {
+      ...options,
+      output: undefined
+    });
+  }
+}
+
 async function main() {
   const { command, options, positional } = parseArgs(process.argv.slice(2));
 
@@ -586,6 +776,11 @@ async function main() {
 
   if (command === 'video-to-sequence') {
     await handleVideoToSequence(positional[0] || DEFAULT_VIDEO_ROOT, options);
+    return;
+  }
+
+  if (command === 'clean-plate') {
+    await handleCleanPlate(positional[0] || DEFAULT_VIDEO_ROOT, options);
     return;
   }
 

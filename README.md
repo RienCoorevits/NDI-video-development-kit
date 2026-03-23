@@ -98,6 +98,25 @@ Images/Video/Scenes/Scene1.mp4
 -> Images/Sequences/Scenes/Scene1/frame-00001.png
 ```
 
+Build a temporal-average clean plate:
+
+```bash
+npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24
+```
+
+Batch clean plates for a folder:
+
+```bash
+npm run media -- clean-plate Images/Video/Scenes --method median --samples 16 --width 1280
+```
+
+Clean plate note:
+
+- `--method median` is now the better default for actor removal
+- `--method average` is still available, but it tends to leave dirtier ghosts
+- both methods work best when actors keep moving through the shot
+- if a character stands in one place for too long, you will still see residue in the plate
+
 Build a contact sheet:
 
 ```bash
