@@ -3,43 +3,25 @@ const DEFAULT_OUTPUT_SIZE = {
   width: 1280
 };
 
-let currentOutputSize = DEFAULT_OUTPUT_SIZE;
-let sketchInstance = null;
+const BOAT_COMPOSITION_ID = '66D73063E1BC48DEB0DEB06FD696BA4A';
+const WIND_ANIMATION_FRAMES = 9;
+const WIND_NOISE_SPEED = 0.18;
+const DEFAULT_BOAT_WIND_STATE = {
+  speed: 1,
+  strength: 1
+};
 
-function drawSketch(p5) {
-  const time = p5.millis() * 0.001;
-  const centerX = p5.width * 0.5;
-  const centerY = p5.height * 0.5;
-
-  p5.background(6, 8, 16);
-
-  p5.noStroke();
-  p5.fill(255, 240, 200, 18);
-  p5.circle(centerX, centerY, Math.min(p5.width, p5.height) * 0.78);
-
-  for (let index = 0; index < 8; index += 1) {
-    const angle = time * 0.7 + index * (p5.TWO_PI / 8);
-    const orbit = Math.min(p5.width, p5.height) * (0.18 + index * 0.03);
-    const x = centerX + Math.cos(angle) * orbit;
-    const y = centerY + Math.sin(angle * 1.4) * orbit * 0.55;
-    const size = 28 + index * 10 + Math.sin(time * 2 + index) * 6;
-
-    p5.fill(255 - index * 18, 200 - index * 10, 120 + index * 12, 180);
-    p5.circle(x, y, size);
-  }
-
-  p5.stroke(255, 255, 255, 90);
-  p5.strokeWeight(1);
-  p5.line(0, centerY, p5.width, centerY);
-  p5.line(centerX, 0, centerX, p5.height);
-
-  p5.noStroke();
-  p5.fill(255);
-  p5.textAlign(p5.LEFT, p5.TOP);
-  p5.textSize(18);
-  p5.text('p5.js test sketch', 24, 20);
-  p5.text(`${p5.width} x ${p5.height}`, 24, 44);
-}
+let currentOutputSize = { ...DEFAULT_OUTPUT_SIZE };
+let boatWindState = { ...DEFAULT_BOAT_WIND_STATE };
+let canvas = null;
+let stage = null;
+let background = null;
+let boatRoot = null;
+let boatLibrary = null;
+let windLabel = null;
+let lastRenderTimestamp = null;
+let lastRenderedFrame = -1;
+let windNoiseTime = 0;
 
 async function fetchJson(url) {
   const response = await fetch(url);
@@ -60,37 +42,153 @@ async function fetchOutputSize() {
   };
 }
 
-function syncSketchSize(nextOutputSize) {
+async function fetchBoatWindState() {
+  const windState = await fetchJson('/api/boat/wind');
+
+  return normaliseBoatWindState(windState);
+}
+
+function getBoatLibrary() {
+  const composition = window.AdobeAn?.getComposition(BOAT_COMPOSITION_ID);
+  const library = composition?.getLibrary();
+
+  if (!window.createjs || !composition || !library?.Boat_HTML5Canvas) {
+    throw new Error('Boat CreateJS export is not available.');
+  }
+
+  return library;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normaliseBoatWindState(payload = boatWindState) {
+  const strength = Number(payload.strength ?? boatWindState.strength ?? DEFAULT_BOAT_WIND_STATE.strength);
+  const speed = Number(payload.speed ?? boatWindState.speed ?? DEFAULT_BOAT_WIND_STATE.speed);
+
+  return {
+    strength: Number.isFinite(strength) ? clamp(strength, 0, 2) : DEFAULT_BOAT_WIND_STATE.strength,
+    speed: Number.isFinite(speed) ? clamp(speed, 0, 4) : DEFAULT_BOAT_WIND_STATE.speed
+  };
+}
+
+function hashNoise(value) {
+  const hash = Math.sin(value * 127.1 + 311.7) * 43758.5453;
+  return hash - Math.floor(hash);
+}
+
+function smoothNoise(value) {
+  const index = Math.floor(value);
+  const fraction = value - index;
+  const curve = fraction * fraction * (3 - 2 * fraction);
+
+  return hashNoise(index) * (1 - curve) + hashNoise(index + 1) * curve;
+}
+
+function getWindStrength(windTime) {
+  const baseWind = smoothNoise(windTime * WIND_NOISE_SPEED);
+  const gust = smoothNoise(windTime * 0.74 + 23.7);
+  const fineMotion = smoothNoise(windTime * 1.85 + 71.4);
+  const rawWindStrength = baseWind * 0.68 + gust * 0.24 + fineMotion * 0.08;
+
+  return clamp01(rawWindStrength * boatWindState.strength);
+}
+
+function resizeBackground() {
+  if (!background) {
+    return;
+  }
+
+  background.graphics
+    .clear()
+    .beginFill('#ffffff')
+    .drawRect(0, 0, currentOutputSize.width, currentOutputSize.height);
+}
+
+function positionBoat() {
+  if (!boatRoot || !boatLibrary) {
+    return;
+  }
+
+  const boatWidth = boatLibrary.properties.width;
+  const boatHeight = boatLibrary.properties.height;
+  const scale = Math.min(
+    currentOutputSize.width / boatWidth,
+    currentOutputSize.height / boatHeight,
+    1
+  );
+
+  boatRoot.x = (currentOutputSize.width - boatWidth * scale) * 0.5;
+  boatRoot.y = (currentOutputSize.height - boatHeight * scale) * 0.5;
+  boatRoot.scaleX = scale;
+  boatRoot.scaleY = scale;
+}
+
+function syncOutputSize(nextOutputSize) {
   currentOutputSize = nextOutputSize;
+  canvas.width = currentOutputSize.width;
+  canvas.height = currentOutputSize.height;
+  resizeBackground();
+  positionBoat();
+  stage?.update();
+}
 
-  if (!sketchInstance || !sketchInstance.canvas) {
-    return;
+function initialiseBoat() {
+  boatLibrary = getBoatLibrary();
+  background = new window.createjs.Shape();
+  boatRoot = new boatLibrary.Boat_HTML5Canvas(undefined, 0, true);
+  windLabel = new window.createjs.Text('', '28px sans-serif', '#000000');
+  stage = new window.createjs.Stage(canvas);
+
+  stage.addChild(background);
+  stage.addChild(boatRoot);
+  stage.addChild(windLabel);
+  resizeBackground();
+  positionBoat();
+
+  windLabel.x = 24;
+  windLabel.y = 20;
+  windLabel.textBaseline = 'top';
+  boatRoot.gotoAndStop(0);
+  window.AdobeAn?.compositionLoaded?.(boatLibrary.properties.id);
+  window.requestAnimationFrame(renderBoatFrame);
+}
+
+function renderBoatFrame(timestamp) {
+  if (lastRenderTimestamp === null) {
+    lastRenderTimestamp = timestamp;
   }
 
-  if (
-    sketchInstance.width === currentOutputSize.width &&
-    sketchInstance.height === currentOutputSize.height
-  ) {
-    return;
+  const elapsedSeconds = Math.max(0, (timestamp - lastRenderTimestamp) / 1000);
+  lastRenderTimestamp = timestamp;
+  windNoiseTime += elapsedSeconds * boatWindState.speed;
+
+  const windStrength = getWindStrength(windNoiseTime);
+  const frame = Math.round(windStrength * (WIND_ANIMATION_FRAMES - 1));
+
+  if (frame !== lastRenderedFrame) {
+    boatRoot.gotoAndStop(frame);
+    lastRenderedFrame = frame;
   }
 
-  sketchInstance.resizeCanvas(currentOutputSize.width, currentOutputSize.height, true);
+  windLabel.text = `Wind: ${Math.round(windStrength * 100)}%  Speed: ${boatWindState.speed.toFixed(2)}x`;
+  stage.update();
+  window.requestAnimationFrame(renderBoatFrame);
 }
 
 async function initialise() {
-  currentOutputSize = await fetchOutputSize();
-
-  sketchInstance = new window.p5((p5) => {
-    p5.setup = () => {
-      p5.createCanvas(currentOutputSize.width, currentOutputSize.height);
-      p5.frameRate(60);
-      p5.textFont('sans-serif');
-    };
-
-    p5.draw = () => {
-      drawSketch(p5);
-    };
-  });
+  canvas = document.querySelector('#output-canvas');
+  [currentOutputSize, boatWindState] = await Promise.all([
+    fetchOutputSize(),
+    fetchBoatWindState()
+  ]);
+  syncOutputSize(currentOutputSize);
+  initialiseBoat();
 
   window.setInterval(() => {
     fetchOutputSize()
@@ -102,10 +200,18 @@ async function initialise() {
           return;
         }
 
-        syncSketchSize(nextOutputSize);
+        syncOutputSize(nextOutputSize);
       })
       .catch(() => {});
   }, 1000);
+
+  window.setInterval(() => {
+    fetchBoatWindState()
+      .then((nextBoatWindState) => {
+        boatWindState = nextBoatWindState;
+      })
+      .catch(() => {});
+  }, 250);
 }
 
 initialise();

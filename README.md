@@ -197,10 +197,11 @@ The control window now handles:
 - output start and stop
 - output width and height presets
 - NDI source name and frame rate
+- boat wind strength and speed
 
-The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch that lives directly in `public/output.js`.
+The output route is a single HTML canvas. On the Boat scene branch, the current output renderer centers the exported CreateJS boat animation on a white background, then uses a smooth wind noise value to choose the boat stress frame and display the wind strength.
 
-The output now includes a test p5.js sketch loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
+The output now includes vendored browser libraries loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
 
 ## Using this as a generative visual storytelling kit
 
@@ -215,7 +216,7 @@ Use it like this:
 
 The practical division of responsibility is:
 
-- `public/output.js` is the output surface. It owns size sync, canvas creation, the p5 lifecycle, and the drawing logic.
+- `public/output.js` is the output surface. It owns size sync, canvas setup, the CreateJS stage, and the drawing logic.
 - `public/output.html` is the minimal output shell. Keep it lean unless the renderer truly needs more DOM structure.
 - `libraries/` is the vendored browser-library area. Put custom frontend libraries here when they should be served at `/libraries/*`.
 - `public/control.html` and `public/control.js` are the operator surface. Add knobs, toggles, cues, scene selectors, or debug readouts here.
@@ -245,8 +246,9 @@ Files placed in [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%2
 Current example:
 
 - [libraries/p5/p5.min.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries/p5/p5.min.js) is served at `/libraries/p5/p5.min.js`
-- [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) loads that file directly
-- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) boots the p5 renderer, keeps the canvas size in sync, and renders the current test sketch
+- [libraries/createjs/createjs.min.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries/createjs/createjs.min.js) is served at `/libraries/createjs/createjs.min.js`
+- [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) loads CreateJS and the boat export directly
+- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) boots the CreateJS renderer, keeps the canvas size in sync, and renders the current boat test animation
 
 ## NDI streaming
 

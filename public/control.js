@@ -1,4 +1,9 @@
 const OUTPUT_PRESET_STORAGE_KEY = 'achmed.output-presets';
+const DEFAULT_BOAT_WIND_STATE = {
+  speed: 1,
+  strength: 1
+};
+
 const BUILTIN_PRESETS = [
   { height: 720, id: 'builtin:hd', name: 'HD 1280x720', width: 1280 },
   { height: 1080, id: 'builtin:fullhd', name: 'Full HD 1920x1080', width: 1920 },
@@ -22,7 +27,11 @@ const elements = {
   outputWidthInput: document.querySelector('#output-width-input'),
   saveOutputPreset: document.querySelector('#save-output-preset'),
   startOutput: document.querySelector('#start-output'),
-  stopOutput: document.querySelector('#stop-output')
+  stopOutput: document.querySelector('#stop-output'),
+  windSpeedInput: document.querySelector('#wind-speed-input'),
+  windSpeedValue: document.querySelector('#wind-speed-value'),
+  windStrengthInput: document.querySelector('#wind-strength-input'),
+  windStrengthValue: document.querySelector('#wind-strength-value')
 };
 
 let currentConfig = null;
@@ -33,6 +42,8 @@ let outputState = {
   width: Number(elements.outputWidthInput.value)
 };
 let outputPresets = [];
+let boatWindState = { ...DEFAULT_BOAT_WIND_STATE };
+let boatWindSaveTimeout = null;
 
 function syncInputValue(input, value) {
   if (document.activeElement === input) {
@@ -90,6 +101,20 @@ function getSelectedPreset() {
 function setOutputDimensions(width, height) {
   elements.outputWidthInput.value = String(width);
   elements.outputHeightInput.value = String(height);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normaliseBoatWindState(payload = boatWindState) {
+  const strength = Number(payload.strength ?? boatWindState.strength ?? DEFAULT_BOAT_WIND_STATE.strength);
+  const speed = Number(payload.speed ?? boatWindState.speed ?? DEFAULT_BOAT_WIND_STATE.speed);
+
+  return {
+    strength: Number.isFinite(strength) ? clamp(strength, 0, 2) : DEFAULT_BOAT_WIND_STATE.strength,
+    speed: Number.isFinite(speed) ? clamp(speed, 0, 4) : DEFAULT_BOAT_WIND_STATE.speed
+  };
 }
 
 function renderPresetOptions() {
@@ -184,11 +209,21 @@ function renderNdiStatus() {
   }
 }
 
+function renderBoatWindState() {
+  boatWindState = normaliseBoatWindState(boatWindState);
+
+  syncInputValue(elements.windStrengthInput, String(boatWindState.strength));
+  syncInputValue(elements.windSpeedInput, String(boatWindState.speed));
+  elements.windStrengthValue.textContent = `${Math.round(boatWindState.strength * 100)}%`;
+  elements.windSpeedValue.textContent = `${boatWindState.speed.toFixed(2)}x`;
+}
+
 function render() {
   renderConfig();
   renderPresetOptions();
   renderOutputState();
   renderNdiStatus();
+  renderBoatWindState();
 }
 
 async function refreshStatuses() {
@@ -205,7 +240,39 @@ async function refreshStatuses() {
 async function initialise() {
   loadOutputPresets();
   currentConfig = await fetchJson('/api/config');
+  boatWindState = normaliseBoatWindState(await fetchJson('/api/boat/wind'));
   await refreshStatuses();
+}
+
+async function saveBoatWindState() {
+  boatWindState = normaliseBoatWindState(
+    await postJson('/api/boat/wind', boatWindState)
+  );
+  renderBoatWindState();
+}
+
+function scheduleBoatWindSave() {
+  window.clearTimeout(boatWindSaveTimeout);
+  boatWindSaveTimeout = window.setTimeout(() => {
+    saveBoatWindState().catch(() => {});
+  }, 80);
+}
+
+function bindBoatWindInput(input, key) {
+  input.addEventListener('input', () => {
+    const value = Number(input.value);
+
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    boatWindState = normaliseBoatWindState({
+      ...boatWindState,
+      [key]: value
+    });
+    renderBoatWindState();
+    scheduleBoatWindSave();
+  });
 }
 
 elements.outputPresetSelect.addEventListener('change', () => {
@@ -289,6 +356,9 @@ elements.stopOutput.addEventListener('click', async () => {
   ndiStatus = response.ndiStatus;
   render();
 });
+
+bindBoatWindInput(elements.windStrengthInput, 'strength');
+bindBoatWindInput(elements.windSpeedInput, 'speed');
 
 initialise();
 

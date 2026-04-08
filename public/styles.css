@@ -73,6 +73,10 @@ body {
   color: #fff;
 }
 
+.control-page input[type='range'] {
+  width: 100%;
+}
+
 .control-page #output-summary,
 .control-page #ndi-message,
 .control-page #ndi-status,
@@ -82,14 +86,14 @@ body {
 
 .output-page {
   overflow: hidden;
-  background: #000;
+  background: #fff;
 }
 
 .output-page canvas {
   display: block;
   width: 100vw;
   height: 100vh;
-  background: #000;
+  background: #fff;
 }
 
 @media (max-width: 400px) {
