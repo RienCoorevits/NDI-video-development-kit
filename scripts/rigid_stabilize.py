@@ -23,7 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--width", type=int, default=0)
-    parser.add_argument("--smooth-radius", type=int, default=15)
+    parser.add_argument("--analysis-width", type=int, default=320)
+    parser.add_argument("--smooth-radius", type=int, default=6)
     parser.add_argument("--max-corners", type=int, default=400)
     parser.add_argument("--quality-level", type=float, default=0.01)
     parser.add_argument("--min-distance", type=float, default=30.0)
@@ -53,6 +54,30 @@ def preprocess_gray(gray: np.ndarray) -> np.ndarray:
     return normalized.astype(np.float32) / 255.0
 
 
+def build_registration_mask(previous_gray: np.ndarray, current_gray: np.ndarray) -> np.ndarray | None:
+    previous_blurred = cv2.GaussianBlur(previous_gray, (5, 5), 0)
+    current_blurred = cv2.GaussianBlur(current_gray, (5, 5), 0)
+    previous_threshold = max(16.0, float(np.percentile(previous_blurred, 52)))
+    current_threshold = max(16.0, float(np.percentile(current_blurred, 52)))
+    previous_mask = previous_blurred >= previous_threshold
+    current_mask = current_blurred >= current_threshold
+    combined_mask = np.logical_and(previous_mask, current_mask).astype(np.uint8) * 255
+
+    if np.count_nonzero(combined_mask) < previous_gray.size * 0.12:
+        combined_mask = np.logical_or(previous_mask, current_mask).astype(np.uint8) * 255
+
+    if np.count_nonzero(combined_mask) < previous_gray.size * 0.08:
+        return None
+
+    combined_mask = cv2.morphologyEx(
+        combined_mask,
+        cv2.MORPH_CLOSE,
+        np.ones((5, 5), dtype=np.uint8)
+    )
+    combined_mask = cv2.erode(combined_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
+    return combined_mask
+
+
 def to_homogeneous(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([matrix.astype(np.float64), np.array([0.0, 0.0, 1.0], dtype=np.float64)])
 
@@ -72,6 +97,16 @@ def matrix_from_params(dx: float, dy: float, angle: float) -> np.ndarray:
         [sin_a, cos_a, dy],
         [0.0, 0.0, 1.0]
     ], dtype=np.float64)
+
+
+def scale_params(params: np.ndarray, x_scale: float, y_scale: float) -> np.ndarray:
+    if len(params) == 0:
+        return params
+
+    scaled = np.copy(params)
+    scaled[:, 0] *= x_scale
+    scaled[:, 1] *= y_scale
+    return scaled
 
 
 def moving_average(curve: np.ndarray, radius: int) -> np.ndarray:
@@ -94,7 +129,12 @@ def smooth_trajectory(trajectory: np.ndarray, radius: int) -> np.ndarray:
     return smoothed
 
 
-def estimate_transform_ecc(previous_gray: np.ndarray, current_gray: np.ndarray, ecc_threshold: float) -> np.ndarray | None:
+def estimate_transform_ecc(
+    previous_gray: np.ndarray,
+    current_gray: np.ndarray,
+    ecc_threshold: float,
+    mask: np.ndarray | None
+) -> np.ndarray | None:
     warp = np.eye(2, 3, dtype=np.float32)
     criteria = (
         cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
@@ -109,7 +149,7 @@ def estimate_transform_ecc(previous_gray: np.ndarray, current_gray: np.ndarray, 
             warp,
             cv2.MOTION_EUCLIDEAN,
             criteria,
-            None,
+            mask,
             3
         )
     except cv2.error:
@@ -126,14 +166,16 @@ def estimate_transform_flow(
     current_gray: np.ndarray,
     max_corners: int,
     quality_level: float,
-    min_distance: float
+    min_distance: float,
+    mask: np.ndarray | None
 ) -> np.ndarray | None:
     previous_points = cv2.goodFeaturesToTrack(
         previous_gray,
         maxCorners=max_corners,
         qualityLevel=quality_level,
         minDistance=min_distance,
-        blockSize=3
+        blockSize=3,
+        mask=mask
     )
 
     if previous_points is None or len(previous_points) < 8:
@@ -168,20 +210,21 @@ def estimate_transform_flow(
 
 def estimate_transforms(
     capture: cv2.VideoCapture,
-    target_width: int,
+    analysis_width: int,
     max_corners: int,
     quality_level: float,
     min_distance: float,
     ecc_threshold: float
-) -> tuple[list[np.ndarray], float, tuple[int, int]]:
+) -> tuple[list[np.ndarray], float, tuple[int, int], tuple[int, int]]:
     fps = capture.get(cv2.CAP_PROP_FPS) or 24.0
     ok, previous_frame = capture.read()
 
     if not ok:
         raise RuntimeError("Unable to read first frame from video.")
 
-    previous_frame = resize_frame(previous_frame, target_width)
-    height, width = previous_frame.shape[:2]
+    source_height, source_width = previous_frame.shape[:2]
+    previous_frame = resize_frame(previous_frame, analysis_width)
+    analysis_height, analysis_width = previous_frame.shape[:2]
     previous_gray = cv2.cvtColor(previous_frame, cv2.COLOR_BGR2GRAY)
     transforms: list[np.ndarray] = []
 
@@ -191,9 +234,10 @@ def estimate_transforms(
         if not ok:
             break
 
-        current_frame = resize_frame(current_frame, width)
+        current_frame = resize_frame(current_frame, analysis_width)
         current_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-        matrix = estimate_transform_ecc(previous_gray, current_gray, ecc_threshold)
+        registration_mask = build_registration_mask(previous_gray, current_gray)
+        matrix = estimate_transform_ecc(previous_gray, current_gray, ecc_threshold, registration_mask)
 
         if matrix is None:
             matrix = estimate_transform_flow(
@@ -201,13 +245,14 @@ def estimate_transforms(
                 current_gray,
                 max_corners,
                 quality_level,
-                min_distance
+                min_distance,
+                registration_mask
             )
 
         transforms.append(matrix if matrix is not None else np.eye(3, dtype=np.float64))
         previous_gray = current_gray
 
-    return transforms, fps, (width, height)
+    return transforms, fps, (analysis_width, analysis_height), (source_width, source_height)
 
 
 def repair_delta_params(
@@ -268,20 +313,32 @@ def write_stabilized_video(
     output_path: Path,
     delta_transforms: list[np.ndarray],
     fps: float,
-    size: tuple[int, int],
+    analysis_size: tuple[int, int],
+    source_size: tuple[int, int],
     smooth_radius: int,
     target_width: int,
     max_shift_ratio: float,
     max_rotation_deg: float
 ) -> None:
-    width, height = size
+    analysis_width, analysis_height = analysis_size
+    source_width, source_height = source_size
+    output_width = target_width if target_width > 0 else source_width
+    output_height = source_height if target_width <= 0 else resize_frame(
+        np.zeros((source_height, source_width, 3), dtype=np.uint8),
+        target_width
+    ).shape[0]
     delta_params = np.array([params_from_matrix(matrix) for matrix in delta_transforms], dtype=np.float64)
     repaired_params = repair_delta_params(
         delta_params,
-        width,
-        height,
+        analysis_width,
+        analysis_height,
         max_shift_ratio,
         max_rotation_deg
+    )
+    repaired_params = scale_params(
+        repaired_params,
+        output_width / analysis_width,
+        output_height / analysis_height
     )
     repaired_transforms = [matrix_from_params(dx, dy, angle) for dx, dy, angle in repaired_params]
     absolute_transforms = build_absolute_transforms(repaired_transforms)
@@ -289,7 +346,7 @@ def write_stabilized_video(
 
     capture = cv2.VideoCapture(str(input_path))
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (output_width, output_height))
 
     if not writer.isOpened():
         raise RuntimeError("Unable to open output video writer.")
@@ -302,12 +359,12 @@ def write_stabilized_video(
     frame_index = 0
 
     while ok and frame_index < len(absolute_transforms):
-        frame = resize_frame(frame, target_width if target_width > 0 else width)
+        frame = resize_frame(frame, output_width)
         correction_matrix = absolute_transforms[frame_index] @ np.linalg.inv(smoothed_absolute_transforms[frame_index])
         stabilized = cv2.warpAffine(
             frame,
             correction_matrix[:2].astype(np.float32),
-            (width, height),
+            (output_width, output_height),
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_REPLICATE
         )
@@ -330,9 +387,10 @@ def main() -> int:
     if not capture.isOpened():
         raise RuntimeError(f"Unable to open input video: {input_path}")
 
-    transforms, fps, size = estimate_transforms(
+    analysis_width = args.analysis_width if args.analysis_width > 0 else args.width
+    transforms, fps, analysis_size, source_size = estimate_transforms(
         capture,
-        args.width,
+        analysis_width,
         args.max_corners,
         args.quality_level,
         args.min_distance,
@@ -345,7 +403,8 @@ def main() -> int:
         output_path,
         transforms,
         fps,
-        size,
+        analysis_size,
+        source_size,
         max(1, args.smooth_radius),
         args.width,
         args.max_shift_ratio,

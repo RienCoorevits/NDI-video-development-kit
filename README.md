@@ -128,11 +128,23 @@ Stabilize a shot into `Images/Stabilize/...`:
 npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4
 ```
 
+Faster estimation on a smaller analysis image while keeping normal output rendering:
+
+```bash
+npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --analysis-width 240
+```
+
 More conservative clamp settings for film-weave style material:
 
 ```bash
-npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
+--smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
 ```
+
+The default stabilizer is now more assertive than before:
+
+- it favors brighter background regions during motion estimation, which helps suppress dark moving silhouettes
+- its default smoothing radius is lower, so small x/y and rotation corrections stay visible instead of being averaged away
+- it now estimates motion on a smaller analysis frame by default, then scales those transforms back up for output, which makes batch stabilization much faster
 
 ## Clean plate masking
 Build the Photoshop-style median stack clean plate from the stabilized result:
@@ -144,19 +156,19 @@ npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples 
 Use every frame in the selected span:
 
 ```bash
---samples all
+npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all
 ```
 
 Bias the stack toward brighter pixels when the actors are darker than the background:
 
 ```bash
---prefer-bright
+npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all --prefer-bright
 ```
 
 Or keep the top brightest percentile of samples per pixel:
 
 ```bash
---prefer-bright --bright-percentile 35
+npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples all --prefer-bright --bright-percentile 35
 ```
 
 Advanced clean plate note:
