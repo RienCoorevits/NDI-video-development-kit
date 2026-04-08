@@ -69,7 +69,7 @@ Commands:
   video-to-sequence <input-or-dir> [--fps <n>] [--format png|jpg]
       Convert a video or a folder of videos from ${DEFAULT_VIDEO_ROOT} into image sequences under ${DEFAULT_SEQUENCE_ROOT}.
 
-  stabilize-shot <input-or-dir> [--width <px>] [--smooth-radius <n>] [--max-shift-ratio <n>] [--max-rotation-deg <n>]
+  stabilize-shot <input-or-dir> [--width <px>] [--analysis-width <px>] [--smooth-radius <n>] [--max-shift-ratio <n>] [--max-rotation-deg <n>]
       Apply rigid x/y + rotation stabilization only, with no frame warping, from ${DEFAULT_VIDEO_ROOT} into ${DEFAULT_STABILIZE_ROOT}.
 
   clean-plate <input-or-dir> [--method median|average] [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg]
@@ -96,6 +96,7 @@ Examples:
   npm run media -- transcode Images/Scenes/Scene1.mp4 --width 1280 --fps 24 --output output/scene1-h264.mp4
   npm run media -- video-to-sequence Images/Video/Scenes
   npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4
+  npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --analysis-width 240
   npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
   npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24
   npm run media -- clean-plate-stack Images/Stabilize/Scenes/Scene1.mp4 --samples 48
@@ -304,6 +305,25 @@ function buildFlexibleCleanPlatePath(inputAbsolutePath, format, batchRoot = null
 
   const basename = path.basename(inputAbsolutePath, path.extname(inputAbsolutePath));
   return path.join(PROJECT_ROOT, 'output', `${basename}-clean-plate-stack.${extension}`);
+}
+
+function formatSeconds(value) {
+  return Number(value).toFixed(2);
+}
+
+function printProgressLine(message, { replace = false } = {}) {
+  if (replace && process.stdout.isTTY) {
+    process.stdout.write(`\r${message}`);
+    return;
+  }
+
+  console.log(message);
+}
+
+function finishProgressLine() {
+  if (process.stdout.isTTY) {
+    process.stdout.write('\n');
+  }
 }
 
 async function ensureParentDir(filePath) {
@@ -1159,7 +1179,7 @@ async function stabilizeShot(inputAbsolutePath, options) {
     : buildMirroredStabilizePath(inputAbsolutePath);
   const smoothRadius = options['smooth-radius']
     ? parsePositiveInteger(options['smooth-radius'], 'stabilize-shot --smooth-radius')
-    : 15;
+    : 6;
   const temporaryOutputPath = `${outputPath}.silent.mp4`;
 
   await ensureParentDir(outputPath);
@@ -1174,6 +1194,7 @@ async function stabilizeShot(inputAbsolutePath, options) {
       '--smooth-radius',
       String(smoothRadius),
       ...(options.width ? ['--width', String(Number(options.width))] : []),
+      ...(options['analysis-width'] ? ['--analysis-width', String(Number(options['analysis-width']))] : []),
       ...(options['max-shift-ratio'] ? ['--max-shift-ratio', String(Number(options['max-shift-ratio']))] : []),
       ...(options['max-rotation-deg'] ? ['--max-rotation-deg', String(Number(options['max-rotation-deg']))] : [])
     ]);
@@ -1476,6 +1497,7 @@ async function createMaskedCleanPlate(inputAbsolutePath, options) {
   const threshold = options.threshold ? Number(options.threshold) : 45;
   const grow = options.grow ? parsePositiveInteger(options.grow, 'clean-plate-masked --grow') : 2;
   const samples = options.samples ? parsePositiveInteger(options.samples, 'clean-plate-masked --samples', { min: 3 }) : 24;
+  const relativeInputPath = toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath));
 
   if (!['png', 'jpg', 'jpeg'].includes(format)) {
     throw new Error('clean-plate-masked --format must be png, jpg, or jpeg');
@@ -1501,23 +1523,46 @@ async function createMaskedCleanPlate(inputAbsolutePath, options) {
   const scaledSize = computeScaledDimensions(videoInfo.width, videoInfo.height, options.width ? Number(options.width) : null);
   const frames = [];
   const masks = [];
+  let frameHeight = scaledSize.height;
+
+  console.log(`[clean-plate-masked] ${relativeInputPath}`);
+  console.log(`[clean-plate-masked] samples=${samples} range=${formatSeconds(startSeconds)}s-${formatSeconds(startSeconds + plateDurationSeconds)}s size=${scaledSize.width}x${scaledSize.height}`);
 
   for (let index = 0; index < samples; index += 1) {
     const ratio = samples === 1 ? 0.5 : (index + 0.5) / samples;
     const sampleTime = startSeconds + plateDurationSeconds * ratio;
+    printProgressLine(
+      `[clean-plate-masked] extracting sample ${index + 1}/${samples} at ${formatSeconds(sampleTime)}s`,
+      { replace: true }
+    );
     const frame = await extractFrameRgba(inputAbsolutePath, sampleTime, scaledSize.width);
+    const inferredHeight = inferRgbaFrameHeight(frame, scaledSize.width);
 
-    if (frame.length !== scaledSize.width * scaledSize.height * 4) {
+    if (!inferredHeight) {
+      finishProgressLine();
       throw new Error(`Unexpected raw frame size for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
     }
 
+    if (frames.length === 0) {
+      frameHeight = inferredHeight;
+    }
+
+    if (inferredHeight !== frameHeight) {
+      finishProgressLine();
+      throw new Error(`Inconsistent raw frame size for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+    }
+
     frames.push(frame);
-    masks.push(buildSilhouetteMask(frame, scaledSize.width, scaledSize.height, threshold, grow));
+    masks.push(buildSilhouetteMask(frame, scaledSize.width, frameHeight, threshold, grow));
   }
 
-  const { holes, output } = composeMaskedMedianPlate(frames, masks, scaledSize.width, scaledSize.height);
-  fillPlateHoles(output, holes, frames, scaledSize.width, scaledSize.height);
-  await writeRgbaImage(outputPath, output, scaledSize.width, scaledSize.height);
+  finishProgressLine();
+  console.log('[clean-plate-masked] composing masked median plate');
+  const { holes, output } = composeMaskedMedianPlate(frames, masks, scaledSize.width, frameHeight);
+  console.log('[clean-plate-masked] filling remaining holes');
+  fillPlateHoles(output, holes, frames, scaledSize.width, frameHeight);
+  console.log('[clean-plate-masked] writing output image');
+  await writeRgbaImage(outputPath, output, scaledSize.width, frameHeight);
   console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
 }
 
@@ -1543,7 +1588,9 @@ async function handleCleanPlateMasked(inputPath, options) {
     return;
   }
 
-  for (const filePath of videoFiles) {
+  for (let index = 0; index < videoFiles.length; index += 1) {
+    const filePath = videoFiles[index];
+    console.log(`[clean-plate-masked] file ${index + 1}/${videoFiles.length}: ${toPosix(path.relative(PROJECT_ROOT, filePath))}`);
     await createMaskedCleanPlate(filePath, {
       ...options,
       output: undefined
