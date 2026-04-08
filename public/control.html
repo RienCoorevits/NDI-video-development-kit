@@ -90,7 +90,190 @@
       </section>
     </div>
 
-    <div class="control-column" aria-hidden="true"></div>
+    <div class="control-column">
+      <section class="control-section shader-section" id="shader-controls">
+        <h2>Paard - Shader</h2>
+
+        <details open>
+          <summary>Video</summary>
+          <div class="inner">
+            <div class="param">
+              <label>Schaal <span id="val-vidscale">1.00</span></label>
+              <input type="range" id="sl-vidscale" min="0.3" max="2.5" step="0.01" value="1.00">
+            </div>
+            <div class="param">
+              <label>Verticaal <span id="val-vidoffset">0.00</span></label>
+              <input type="range" id="sl-vidoffset" min="-0.5" max="0.5" step="0.01" value="0.00">
+            </div>
+            <div class="param">
+              <label>Blend sterkte <span id="val-vidmix">1.00</span></label>
+              <input type="range" id="sl-vidmix" min="0.1" max="1.0" step="0.01" value="1.00">
+            </div>
+            <div class="param">
+              <label>FPS <span id="val-fps">24</span></label>
+              <input type="range" id="sl-fps" min="4" max="30" step="1" value="24">
+            </div>
+          </div>
+        </details>
+
+        <details open>
+          <summary>Wolken</summary>
+          <div class="inner">
+            <div class="section-title">Compositie</div>
+            <div class="param">
+              <label>Aantal lagen <span id="val-cloudLayers">3</span></label>
+              <input type="range" id="sl-cloudLayers" min="0" max="8" step="1" value="3">
+            </div>
+            <div class="param">
+              <label>Lagen achter paard <span id="val-cloudBehind">2</span></label>
+              <input type="range" id="sl-cloudBehind" min="0" max="8" step="1" value="2">
+            </div>
+            <div class="param">
+              <label>Donkerheid <span id="val-cloudDark">0.14</span></label>
+              <input type="range" id="sl-cloudDark" min="0" max="1" step="0.01" value="0.14">
+            </div>
+            <div class="param">
+              <label>Parallax <span id="val-cloudParallax">1.20</span></label>
+              <input type="range" id="sl-cloudParallax" min="0" max="2" step="0.05" value="1.20">
+            </div>
+
+            <div class="section-title">Beweging</div>
+            <div class="param">
+              <label>Drift horizontaal <span id="val-cloudDriftX">1.55</span></label>
+              <input type="range" id="sl-cloudDriftX" min="-3" max="3" step="0.05" value="1.55">
+            </div>
+            <div class="param">
+              <label>Drift verticaal <span id="val-cloudDriftY">1.00</span></label>
+              <input type="range" id="sl-cloudDriftY" min="-3" max="3" step="0.05" value="1.00">
+            </div>
+
+            <div class="section-title">Noise vorm</div>
+            <div class="param">
+              <label>Schaal <span id="val-cloudScale">2.10</span></label>
+              <input type="range" id="sl-cloudScale" min="0.2" max="8" step="0.05" value="2.10">
+            </div>
+            <div class="param">
+              <label>Platheid <span id="val-cloudFlat">20.0</span></label>
+              <input type="range" id="sl-cloudFlat" min="0.05" max="60" step="0.05" value="20.0">
+            </div>
+            <div class="param">
+              <label>Dichtheid <span id="val-cloudDensity">0.45</span></label>
+              <input type="range" id="sl-cloudDensity" min="0.1" max="0.85" step="0.01" value="0.45">
+            </div>
+            <div class="param">
+              <label>Rand zachtheid <span id="val-cloudEdge">0.51</span></label>
+              <input type="range" id="sl-cloudEdge" min="0.01" max="1" step="0.01" value="0.51">
+            </div>
+            <div class="param">
+              <label>Turbulentie <span id="val-cloudTurb">0.30</span></label>
+              <input type="range" id="sl-cloudTurb" min="0" max="1" step="0.01" value="0.30">
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>Film</summary>
+          <div class="inner">
+            <div class="section-title">Kleur</div>
+            <div class="param">
+              <label>Basiskleur</label>
+              <div class="color-row">
+                <div class="color-swatch selected" data-hex="#00df00" style="background:#00df00"></div>
+                <div class="color-swatch" data-hex="#daac00" style="background:#daac00"></div>
+                <div class="color-swatch" data-hex="#037cef" style="background:#037cef"></div>
+                <div class="color-swatch" data-hex="#e35035" style="background:#e35035"></div>
+              </div>
+            </div>
+            <div class="param">
+              <label>Kleurverzadiging <span id="val-colorsat">1.00</span></label>
+              <input type="range" id="sl-colorsat" min="0" max="1" step="0.01" value="1.00">
+            </div>
+            <div class="param">
+              <label>Brightness <span id="val-bright">180</span></label>
+              <input type="range" id="sl-bright" min="60" max="240" step="1" value="180">
+            </div>
+            <div class="param">
+              <label>Sepia <span id="val-sepia">0.56</span></label>
+              <input type="range" id="sl-sepia" min="0" max="1" step="0.01" value="0.56">
+            </div>
+            <div class="param">
+              <label>Contrast <span id="val-contrast">1.10</span></label>
+              <input type="range" id="sl-contrast" min="0.5" max="2.5" step="0.01" value="1.10">
+            </div>
+
+            <div class="section-title">Flicker</div>
+            <div class="param">
+              <label>Flicker <span id="val-flicker">7</span></label>
+              <input type="range" id="sl-flicker" min="0" max="100" step="1" value="7">
+            </div>
+            <div class="param">
+              <label>Flicker speed <span id="val-fspeed">3.70</span></label>
+              <input type="range" id="sl-fspeed" min="0.05" max="4" step="0.05" value="3.70">
+            </div>
+            <div class="param">
+              <label>Horizontale banden <span id="val-bands">0.04</span></label>
+              <input type="range" id="sl-bands" min="0" max="1" step="0.01" value="0.04">
+            </div>
+
+            <div class="section-title">Grain</div>
+            <div class="param">
+              <label>Grain <span id="val-grain">8</span></label>
+              <input type="range" id="sl-grain" min="0" max="80" step="1" value="8">
+            </div>
+            <div class="param">
+              <label>Grain grootte <span id="val-gsize">0.9</span></label>
+              <input type="range" id="sl-gsize" min="0.5" max="4" step="0.1" value="0.9">
+            </div>
+
+            <div class="section-title">Camera</div>
+            <div class="param">
+              <label>Shake <span id="val-shake">0.9</span></label>
+              <input type="range" id="sl-shake" min="0" max="12" step="0.1" value="0.9">
+            </div>
+            <div class="param">
+              <label>Drift <span id="val-drift">0.95</span></label>
+              <input type="range" id="sl-drift" min="0" max="2" step="0.05" value="0.95">
+            </div>
+
+            <div class="section-title">Artifacts</div>
+            <div class="param">
+              <label>Vignette <span id="val-vignette">0.33</span></label>
+              <input type="range" id="sl-vignette" min="0" max="1.5" step="0.01" value="0.33">
+            </div>
+            <div class="param">
+              <label>Vignette animate <span id="val-viganim">0.12</span></label>
+              <input type="range" id="sl-viganim" min="0" max="2.0" step="0.01" value="0.12">
+            </div>
+            <div class="param">
+              <label>Edge burn <span id="val-burn">0.40</span></label>
+              <input type="range" id="sl-burn" min="0" max="1" step="0.01" value="0.40">
+            </div>
+            <div class="param">
+              <label>Halation <span id="val-halo">0.20</span></label>
+              <input type="range" id="sl-halo" min="0" max="1" step="0.01" value="0.20">
+            </div>
+            <div class="param">
+              <label>Krassen <span id="val-scratch">0.01</span></label>
+              <input type="range" id="sl-scratch" min="0" max="1" step="0.01" value="0.01">
+            </div>
+            <div class="param">
+              <label>Stof <span id="val-dust">0.07</span></label>
+              <input type="range" id="sl-dust" min="0" max="1" step="0.01" value="0.07">
+            </div>
+
+            <div class="section-title">Textuur</div>
+            <div class="param">
+              <label>Schaal <span id="val-texscale">2.8</span></label>
+              <input type="range" id="sl-texscale" min="0.5" max="10" step="0.1" value="2.8">
+            </div>
+            <div class="param">
+              <label>Sterkte <span id="val-texstr">0.05</span></label>
+              <input type="range" id="sl-texstr" min="0" max="0.6" step="0.01" value="0.05">
+            </div>
+          </div>
+        </details>
+      </section>
+    </div>
     <div class="control-column" aria-hidden="true"></div>
     <div class="control-column" aria-hidden="true"></div>
     <div class="control-column" aria-hidden="true"></div>

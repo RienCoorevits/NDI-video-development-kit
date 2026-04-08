@@ -197,10 +197,11 @@ The control window now handles:
 - output start and stop
 - output width and height presets
 - NDI source name and frame rate
+- Flying Horse shader controls
 
-The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch that lives directly in `public/output.js`.
+The output route is a single HTML canvas driven by the Flying Horse WebGL shader renderer in `public/output.js`.
 
-The output now includes a test p5.js sketch loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
+The Flying Horse control values live in the shared server state exposed by `/api/shader/params`, so the separate control page can drive the separate output page.
 
 ## Using this as a generative visual storytelling kit
 
@@ -215,7 +216,7 @@ Use it like this:
 
 The practical division of responsibility is:
 
-- `public/output.js` is the output surface. It owns size sync, canvas creation, the p5 lifecycle, and the drawing logic.
+- `public/output.js` is the output surface. It owns size sync, canvas rendering, the WebGL shader, and the drawing loop.
 - `public/output.html` is the minimal output shell. Keep it lean unless the renderer truly needs more DOM structure.
 - `libraries/` is the vendored browser-library area. Put custom frontend libraries here when they should be served at `/libraries/*`.
 - `public/control.html` and `public/control.js` are the operator surface. Add knobs, toggles, cues, scene selectors, or debug readouts here.
@@ -245,8 +246,8 @@ Files placed in [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%2
 Current example:
 
 - [libraries/p5/p5.min.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries/p5/p5.min.js) is served at `/libraries/p5/p5.min.js`
-- [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) loads that file directly
-- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) boots the p5 renderer, keeps the canvas size in sync, and renders the current test sketch
+- [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) is now the minimal output shell
+- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) boots the Flying Horse WebGL renderer, keeps the canvas size in sync, and reads shader control values from the server
 
 ## NDI streaming
 

@@ -80,6 +80,112 @@ body {
   word-break: break-word;
 }
 
+.shader-section details {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #333;
+}
+
+.shader-section details:last-child {
+  border-bottom: 0;
+}
+
+.shader-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: #bbb;
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 2px;
+  list-style: none;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.shader-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.shader-section summary::after {
+  content: '>';
+  color: #777;
+}
+
+.shader-section details[open] summary::after {
+  content: 'v';
+}
+
+.shader-section .inner {
+  padding-top: 8px;
+}
+
+.shader-section .section-title {
+  margin: 10px 0 6px;
+  color: #999;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.shader-section .param {
+  margin-bottom: 8px;
+}
+
+.shader-section .param label {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+  color: #bbb;
+}
+
+.shader-section .param label span {
+  min-width: 42px;
+  color: #fff;
+  font-weight: 700;
+  text-align: right;
+}
+
+.shader-section input[type='range'] {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  appearance: none;
+  background: #333;
+  cursor: pointer;
+  outline: none;
+}
+
+.shader-section input[type='range']::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  appearance: none;
+  background: #c8a96e;
+  cursor: pointer;
+}
+
+.shader-section .color-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.shader-section .color-swatch {
+  flex: 1;
+  height: 24px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.shader-section .color-swatch.selected {
+  border-color: #fff;
+}
+
 .output-page {
   overflow: hidden;
   background: #000;

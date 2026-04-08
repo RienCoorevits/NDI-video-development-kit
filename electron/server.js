@@ -3,6 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import {
+  DEFAULT_SHADER_PARAMS,
+  cloneShaderParams,
+  normaliseShaderParams
+} from '../public/flying-horse-state.js';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const LIBRARIES_DIR = path.join(ROOT_DIR, 'libraries');
@@ -12,7 +17,8 @@ const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8'
+  '.json': 'application/json; charset=utf-8',
+  '.mp4': 'video/mp4'
 };
 
 function json(res, statusCode, payload) {
@@ -101,12 +107,37 @@ async function serveStaticFile(pathname, res) {
 
   const filePath = routes.get(pathname);
 
-  if (!filePath) {
+  if (filePath) {
+    const contents = await readFile(filePath);
+    const contentType = CONTENT_TYPES[path.extname(filePath)] ?? 'text/plain; charset=utf-8';
+
+    res.writeHead(200, {
+      'Content-Type': contentType
+    });
+    res.end(contents);
+    return true;
+  }
+
+  const relativePath = path.normalize(pathname.replace(/^\//, ''));
+
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     return false;
   }
 
-  const contents = await readFile(filePath);
-  const contentType = CONTENT_TYPES[path.extname(filePath)] ?? 'text/plain; charset=utf-8';
+  const publicFilePath = path.join(PUBLIC_DIR, relativePath);
+  let contents;
+
+  try {
+    contents = await readFile(publicFilePath);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'EISDIR') {
+      return false;
+    }
+
+    throw error;
+  }
+
+  const contentType = CONTENT_TYPES[path.extname(publicFilePath)] ?? 'text/plain; charset=utf-8';
 
   res.writeHead(200, {
     'Content-Type': contentType
@@ -152,6 +183,7 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
     sizeLocked: false,
     width: 1280
   };
+  let shaderParams = cloneShaderParams(DEFAULT_SHADER_PARAMS);
 
   const server = http.createServer(async (req, res) => {
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
@@ -174,6 +206,23 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/output/status') {
       return json(res, 200, outputState);
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/shader/params') {
+      return json(res, 200, shaderParams);
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/shader/params') {
+      try {
+        const rawBody = await readRequestBody(req);
+        const payload = rawBody ? JSON.parse(rawBody) : {};
+        shaderParams = normaliseShaderParams(payload, shaderParams);
+        return json(res, 200, shaderParams);
+      } catch (error) {
+        return json(res, 400, {
+          error: error instanceof Error ? error.message : 'Expected valid JSON.'
+        });
+      }
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/output/start') {

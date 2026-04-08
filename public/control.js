@@ -1,3 +1,11 @@
+import {
+  DEFAULT_SHADER_PARAMS,
+  cloneShaderParams,
+  hexToRgb,
+  normaliseShaderParams,
+  rgbToHex
+} from '/flying-horse-state.js';
+
 const OUTPUT_PRESET_STORAGE_KEY = 'achmed.output-presets';
 const BUILTIN_PRESETS = [
   { height: 720, id: 'builtin:hd', name: 'HD 1280x720', width: 1280 },
@@ -21,6 +29,7 @@ const elements = {
   outputUrl: document.querySelector('#output-url'),
   outputWidthInput: document.querySelector('#output-width-input'),
   saveOutputPreset: document.querySelector('#save-output-preset'),
+  shaderControls: document.querySelector('#shader-controls'),
   startOutput: document.querySelector('#start-output'),
   stopOutput: document.querySelector('#stop-output')
 };
@@ -33,6 +42,8 @@ let outputState = {
   width: Number(elements.outputWidthInput.value)
 };
 let outputPresets = [];
+let shaderParams = cloneShaderParams(DEFAULT_SHADER_PARAMS);
+let shaderSaveTimeout = null;
 
 function syncInputValue(input, value) {
   if (document.activeElement === input) {
@@ -184,6 +195,108 @@ function renderNdiStatus() {
   }
 }
 
+function getShaderRangeInputs() {
+  return Array.from(elements.shaderControls?.querySelectorAll('input[type="range"][id^="sl-"]') ?? []);
+}
+
+function getShaderParamKey(input) {
+  return input.id.replace(/^sl-/, '');
+}
+
+function getShaderDisplayValue(input, value) {
+  const step = Number(input.step);
+
+  if (Number.isFinite(step) && step >= 1) {
+    return String(Math.round(value));
+  }
+
+  if (Number.isFinite(step) && step > 0) {
+    const [, decimals = ''] = input.step.split('.');
+    return Number(value).toFixed(decimals.length);
+  }
+
+  return Number(value).toFixed(2);
+}
+
+function renderShaderControls() {
+  if (!elements.shaderControls) {
+    return;
+  }
+
+  for (const input of getShaderRangeInputs()) {
+    const key = getShaderParamKey(input);
+    const value = Number(shaderParams[key]);
+    const displayValue = document.querySelector(`#val-${key}`);
+
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    if (document.activeElement !== input) {
+      input.value = String(value);
+    }
+
+    if (displayValue) {
+      displayValue.textContent = getShaderDisplayValue(input, value);
+    }
+  }
+
+  const selectedHex = rgbToHex(shaderParams.baseColor).toLowerCase();
+
+  elements.shaderControls.querySelectorAll('.color-swatch').forEach((swatch) => {
+    swatch.classList.toggle('selected', swatch.dataset.hex?.toLowerCase() === selectedHex);
+  });
+}
+
+async function saveShaderParams() {
+  shaderParams = normaliseShaderParams(
+    await postJson('/api/shader/params', shaderParams),
+    shaderParams
+  );
+  renderShaderControls();
+}
+
+function scheduleShaderParamsSave() {
+  window.clearTimeout(shaderSaveTimeout);
+  shaderSaveTimeout = window.setTimeout(() => {
+    saveShaderParams().catch(() => {});
+  }, 80);
+}
+
+async function refreshShaderParams() {
+  shaderParams = normaliseShaderParams(await fetchJson('/api/shader/params'));
+  renderShaderControls();
+}
+
+function bindShaderControls() {
+  if (!elements.shaderControls) {
+    return;
+  }
+
+  for (const input of getShaderRangeInputs()) {
+    input.addEventListener('input', () => {
+      const key = getShaderParamKey(input);
+      const value = Number(input.value);
+
+      if (!Number.isFinite(value)) {
+        return;
+      }
+
+      shaderParams[key] = value;
+      renderShaderControls();
+      scheduleShaderParamsSave();
+    });
+  }
+
+  elements.shaderControls.querySelectorAll('.color-swatch').forEach((swatch) => {
+    swatch.addEventListener('click', () => {
+      shaderParams.baseColor = hexToRgb(swatch.dataset.hex);
+      renderShaderControls();
+      scheduleShaderParamsSave();
+    });
+  });
+}
+
 function render() {
   renderConfig();
   renderPresetOptions();
@@ -205,6 +318,7 @@ async function refreshStatuses() {
 async function initialise() {
   loadOutputPresets();
   currentConfig = await fetchJson('/api/config');
+  await refreshShaderParams();
   await refreshStatuses();
 }
 
@@ -290,6 +404,7 @@ elements.stopOutput.addEventListener('click', async () => {
   render();
 });
 
+bindShaderControls();
 initialise();
 
 window.setInterval(() => {
